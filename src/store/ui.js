@@ -1,7 +1,12 @@
 import { create } from "zustand";
 
+// Below 900px the sidebar becomes an overlay drawer (see layout.css) rather
+// than a permanent column, so it starts closed there — a full-width drawer
+// covering the screen on first paint would be worse than no sidebar at all.
+const startsOpen = typeof window === "undefined" || window.innerWidth >= 900;
+
 export const useUi = create((set) => ({
-  sidebarOpen: true,
+  sidebarOpen: startsOpen,
   chatbotOpen: false,
   search: "",
   notifications: [

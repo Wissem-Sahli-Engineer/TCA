@@ -85,8 +85,8 @@ export function NotificationBell() {
           style={{
             position: "absolute",
             top: "calc(100% + 8px)",
-            right: 0,
-            width: "320px",
+            insetInlineEnd: 0,
+            width: "min(320px, calc(100vw - 32px))",
             padding: "16px",
             zIndex: 50,
             boxShadow: "var(--shadow-login)",

@@ -66,7 +66,14 @@ export function ChatbotPage() {
   };
 
   return (
-    <div className="page-container-max" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 134px)" }}>
+    <div
+      className="page-container-max"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "calc(100vh - 134px - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
+      }}
+    >
       <PageTitle kicker={t("chatbot.kicker")} title={t("chatbot.title")} />
 
       <div

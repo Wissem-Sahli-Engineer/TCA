@@ -64,7 +64,13 @@ export function AppShell() {
       if (!el) return;
       const labels = el.querySelectorAll("[data-label]");
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const width = sidebarOpen ? 232 : 76;
+      // Below 900px the sidebar is a full-height overlay drawer (see
+      // layout.css) instead of a column that pushes content over — so it's
+      // either fully open (240px) or fully hidden (0), never a collapsed
+      // icon rail, which would otherwise permanently eat a chunk of a phone
+      // screen's width.
+      const isMobile = window.matchMedia("(max-width: 899px)").matches;
+      const width = isMobile ? (sidebarOpen ? 240 : 0) : sidebarOpen ? 232 : 76;
       gsap.to(el, {
         width,
         duration: reduce ? 0 : DURATION,
@@ -81,6 +87,12 @@ export function AppShell() {
     },
     { dependencies: [sidebarOpen], scope: sidebarRef }
   );
+
+  // Tapping a nav link inside the mobile overlay drawer should close it —
+  // otherwise it stays covering the new page until the user taps again.
+  const closeSidebarOnMobile = () => {
+    if (window.matchMedia("(max-width: 899px)").matches) toggleSidebar();
+  };
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -140,6 +152,7 @@ export function AppShell() {
                 to={item.to}
                 end={item.end}
                 title={item.label}
+                onClick={closeSidebarOnMobile}
                 className={({ isActive }) =>
                   `nav-link ${isActive ? "active" : ""}`
                 }
@@ -162,6 +175,7 @@ export function AppShell() {
                 to={item.to}
                 end={item.end}
                 title={item.label}
+                onClick={closeSidebarOnMobile}
                 className={({ isActive }) =>
                   `nav-link ${isActive ? "active" : ""}`
                 }
@@ -178,7 +192,10 @@ export function AppShell() {
 
           <button
             type="button"
-            onClick={() => navigate("/chatbot")}
+            onClick={() => {
+              navigate("/chatbot");
+              closeSidebarOnMobile();
+            }}
             className="nav-link"
             title="AI Chatbot"
             style={{ width: "100%", textAlign: "left" }}
@@ -194,6 +211,8 @@ export function AppShell() {
           Visa operations
         </p>
       </aside>
+
+      {sidebarOpen ? <div className="sidebar-backdrop" onClick={toggleSidebar} /> : null}
 
       <div className="app-main-column">
         <header className="app-header">
@@ -233,7 +252,7 @@ export function AppShell() {
                   className="btn-logout"
                 >
                   <IconLogout size={14} />
-                  {t("header.logout")}
+                  <span className="btn-logout-label">{t("header.logout")}</span>
                 </button>
               </Magnet>
             </div>

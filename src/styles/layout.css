@@ -4,6 +4,11 @@
   height: 100%;
   overflow: hidden;
   background-color: var(--color-surface);
+  /* Clears the notch/Dynamic Island and home indicator on the native iOS
+     app, which renders edge-to-edge (viewport-fit=cover). A no-op in any
+     regular browser, where these env() vars resolve to 0. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .app-sidebar {
@@ -18,6 +23,36 @@
   border-inline-end: 1px solid var(--color-line);
   background-color: var(--color-white);
   will-change: width;
+}
+
+/* Below this width there isn't room for a sidebar that pushes content over —
+   it becomes a full-height overlay drawer instead (toggled by the same menu
+   button), with a backdrop to close it on outside tap. */
+@media (max-width: 899px) {
+  .app-sidebar {
+    position: fixed;
+    inset-inline-start: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    box-shadow: var(--shadow-bar);
+    /* Fixed positioning takes it out of .app-shell's flow, so it no longer
+       inherits the shell's safe-area padding — add its own. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+  }
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background-color: rgba(0, 0, 0, 0.4);
 }
 
 .sidebar-header {
@@ -159,6 +194,13 @@
   box-shadow: var(--shadow-bar);
 }
 
+@media (max-width: 640px) {
+  .app-header {
+    padding: 0 16px;
+    gap: 8px;
+  }
+}
+
 .header-left {
   display: flex;
   min-width: 0;
@@ -171,6 +213,12 @@
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+@media (max-width: 640px) {
+  .header-right {
+    gap: 8px;
+  }
 }
 
 .icon-btn {
@@ -232,6 +280,20 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .user-badge {
+    gap: 8px;
+  }
+
+  .btn-logout-label {
+    display: none;
+  }
+
+  .btn-logout {
+    padding: 8px 10px;
+  }
 }
 
 .avatar-circle {
@@ -304,6 +366,18 @@
 
 .app-page-padding {
   padding: 32px;
+}
+
+@media (max-width: 899px) {
+  .app-page-padding {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-page-padding {
+    padding: 16px;
+  }
 }
 
 .page-container-max {

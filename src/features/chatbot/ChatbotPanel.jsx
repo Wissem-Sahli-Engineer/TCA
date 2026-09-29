@@ -75,12 +75,12 @@ export function ChatbotPanel() {
       ref={panelRef}
       style={{
         position: "fixed",
-        bottom: "96px",
+        bottom: "calc(96px + env(safe-area-inset-bottom))",
         insetInlineEnd: "24px",
         zIndex: 40,
         display: "flex",
         height: "min(560px, 70vh)",
-        width: "380px",
+        width: "min(380px, calc(100vw - 32px))",
         transform: `translateX(${isRtl ? -420 : 420}px)`,
         flexDirection: "column",
         overflow: "hidden",
