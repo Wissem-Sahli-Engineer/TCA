@@ -1,4 +1,133 @@
-kill -9 $(lsof -t -i:8001) : kill the port
-uvicorn backend:app --host 0.0.0.0 --port 8001 --reload : restart the server 
-curl http://localhost:11434/ :  verying ollama working 
-ollama serve : start the ollama server 
+TCA ERP — how to run the whole project
+=======================================
+Always run these from the project root: /Users/wess/Desktop/zouhour
+
+Do this every time you start working (4 things must be running):
+1) Postgres        (database)
+2) Ollama           (local AI model, for the chatbot / passport OCR)
+3) Backend          (FastAPI, port 8001)
+4) Frontend         (Vite, port 5173)
+
+------------------------------------------------------------
+1) POSTGRES (database)
+------------------------------------------------------------
+Check it's running:
+    pg_isready
+
+If it's not running (macOS, installed via Homebrew):
+    brew services start postgresql@16      # or whatever version you installed
+
+------------------------------------------------------------
+2) OLLAMA (local AI model)
+------------------------------------------------------------
+Start the Ollama server (leave this running in its own terminal tab):
+    ollama serve
+
+Check it's already running / answering:
+    curl http://localhost:11434/api/tags
+
+Make sure the model the app uses is pulled (only needed once):
+    ollama pull qwen2.5vl:3b-8k
+
+List models you have installed:
+    ollama list
+
+------------------------------------------------------------
+3) BACKEND (FastAPI, port 8001)
+------------------------------------------------------------
+First time only — create the virtualenv and install deps:
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+
+Run the backend (from the project root, NOT from inside backend/):
+    .venv/bin/python -m backend.backend
+
+    (equivalent alternative:)
+    .venv/bin/python -m uvicorn backend.backend:app --host 0.0.0.0 --port 8001 --reload
+
+Run it in the background instead of blocking your terminal:
+    .venv/bin/python -m backend.backend > /tmp/backend.log 2>&1 &
+    tail -f /tmp/backend.log          # to watch its logs
+
+Check it's alive:
+    curl http://localhost:8001/docs
+
+Kill whatever is using port 8001 (e.g. if it's stuck / already running):
+    kill -9 $(lsof -t -i:8001)
+
+Database migrations (only when the schema changes):
+    .venv/bin/python -m alembic upgrade head
+
+Create/update the one Admin account (only needed once, or to reset the password):
+    .venv/bin/python -m backend.seed_admin
+
+------------------------------------------------------------
+4) FRONTEND (Vite, port 5173)
+------------------------------------------------------------
+First time only — install deps:
+    npm install
+
+Run the dev server:
+    npm run dev
+
+Run it in the background instead of blocking your terminal:
+    npm run dev > /tmp/frontend.log 2>&1 &
+    tail -f /tmp/frontend.log         # to watch its logs
+
+Then open in your browser:
+    http://localhost:5173
+
+Kill whatever is using port 5173:
+    kill -9 $(lsof -t -i:5173)
+
+Build the production bundle (writes to dist/):
+    npm run build
+
+------------------------------------------------------------
+QUICK "START EVERYTHING" (copy-paste block)
+------------------------------------------------------------
+Open two terminal tabs, or background everything in one:
+
+    cd /Users/wess/Desktop/zouhour
+    ollama serve > /tmp/ollama.log 2>&1 &
+    .venv/bin/python -m backend.backend > /tmp/backend.log 2>&1 &
+    npm run dev > /tmp/frontend.log 2>&1 &
+
+Then check everything came up:
+    curl http://localhost:11434/api/tags     # Ollama
+    curl http://localhost:8001/docs          # Backend
+    curl http://localhost:5173/              # Frontend
+
+------------------------------------------------------------
+STOP EVERYTHING
+------------------------------------------------------------
+    kill -9 $(lsof -t -i:8001)     # backend
+    kill -9 $(lsof -t -i:5173)     # frontend
+    pkill ollama                   # ollama server
+
+------------------------------------------------------------
+NOTE: first backend start after a while can be SLOW
+------------------------------------------------------------
+If `.venv/bin/python -m backend.backend` seems to hang for a minute with
+no log output at all, that's normal on this Mac — macOS Spotlight
+(mds_stores / corespotlightd) sometimes competes for disk I/O right
+after big changes (npm installs, Xcode builds, etc.) and Python's
+imports just read files slowly. It is NOT stuck — just wait. Once it
+prints "Application startup complete." it's ready. Subsequent restarts
+are fast again since the files are now cached.
+
+------------------------------------------------------------
+BONUS: running the iOS app (Capacitor)
+------------------------------------------------------------
+The iOS app is a native wrapper around the same frontend (see
+src/lib/apiBase.js — it points the native app at the backend's LAN IP
+instead of the Vite proxy). Whenever you change frontend code and want
+to test it on the iPhone/simulator again:
+
+    npm run build
+    npx cap sync ios
+    npx cap open ios          # opens Xcode — press ▶ Run from there
+
+If your Mac's LAN IP changes, update NATIVE_API_BASE in
+src/lib/apiBase.js to match (check your new IP with: ipconfig getifaddr en0),
+then repeat the three commands above.
