@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconBell } from "./ui/Icons";
 import Magnet from "./ui/magnet";
 import { useI18n } from "../store/i18n";
+import { alertReasons, alertText, isAlert } from "../features/clients/options";
 
 const COUNTRIES = [
   { id: "tunisia", currency: "TND" },
@@ -20,7 +21,7 @@ export function NotificationBell() {
       .then((r) => (r.ok ? r.json() : []))
       .then((clients) =>
         setAlertClients(
-          (Array.isArray(clients) ? clients : []).filter((c) => c.visa_status === "rejected")
+          (Array.isArray(clients) ? clients : []).filter(isAlert)
         )
       )
       .catch(() => setAlertClients([]));
@@ -97,7 +98,7 @@ export function NotificationBell() {
           </p>
           {treasury.map((tr) => (
             <div key={tr.id} className="flex-between" style={{ marginBottom: "6px" }}>
-              <span style={{ fontSize: "13px", textTransform: "capitalize" }}>{tr.id}</span>
+              <span style={{ fontSize: "13px" }}>{t(`countries.${tr.id}`)}</span>
               <span style={{ fontSize: "13px", fontWeight: "700", color: tr.net < 0 ? "var(--color-danger)" : "var(--color-success)" }}>
                 {tr.currency} {tr.net.toLocaleString()}{tr.net < 0 ? " ⚠" : ""}
               </span>
@@ -112,7 +113,7 @@ export function NotificationBell() {
           ) : (
             alertClients.map((c) => (
               <div key={c.id} style={{ fontSize: "13px", padding: "4px 0" }}>
-                {c.given_name} {c.surname} — <span style={{ color: "var(--color-danger)" }}>{t("notifications.visaRejected")}</span>
+                {c.given_name} {c.surname} — <span style={{ color: "var(--color-danger)" }}>{alertReasons(c).map((r) => alertText(t, r)).join(" · ")}</span>
               </div>
             ))
           )}

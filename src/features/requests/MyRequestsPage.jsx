@@ -109,7 +109,7 @@ export function MyRequestsPage() {
                   <td>{r.description}</td>
                   <td>{r.submitted_date}</td>
                   <td>
-                    <span className={`badge ${BADGE_TONE[r.status]}`}>{r.status}</span>
+                    <span className={`badge ${BADGE_TONE[r.status]}`}>{t(`status.${r.status}`)}</span>
                   </td>
                   {isAdmin ? (
                     <td>

@@ -18,15 +18,9 @@ import { PageTitle } from "../../components/ui/Card";
 import { BoxSelect } from "../../components/ui/Input";
 import { useScrollReveal } from "../../lib/useScrollReveal";
 import { useI18n } from "../../store/i18n";
+import { VISA_STATUSES, optionLabel, visaStatusOf } from "../clients/options";
 
 const COUNTRIES = ["tunisia", "libya"];
-
-const VISA_STATUS_META = [
-  { id: "not_started", name: "Not started", color: "#9ca3af" },
-  { id: "pending", name: "Pending", color: "#F0924B" },
-  { id: "approved", name: "Approved", color: "#22c55e" },
-  { id: "rejected", name: "Rejected", color: "#ef4444" },
-];
 
 const COUNTRY_COLORS = { tunisia: "#8B5CF6", libya: "#F0924B" };
 
@@ -72,8 +66,8 @@ export function StatsPage() {
           counts[inv.doc_type] = (counts[inv.doc_type] || 0) + 1;
         });
         setInvoicesByType([
-          { name: "Factures", value: counts.facture || 0, color: "#8B5CF6" },
-          { name: "Reçus", value: counts.recu || 0, color: "#F0924B" },
+          { id: "factures", value: counts.facture || 0, color: "#8B5CF6" },
+          { id: "recus", value: counts.recu || 0, color: "#F0924B" },
         ]);
       })
       .catch(() => {});
@@ -119,13 +113,23 @@ export function StatsPage() {
       .map((month) => ({ month, count: byMonth[month] }));
   }, [filtered]);
 
-  const statusCounts = VISA_STATUS_META.map((s) => ({
+  const statusCounts = VISA_STATUSES.map((s) => ({
     ...s,
-    value: clients.filter((c) => (c.visa_status || "not_started") === s.id).length,
+    name: optionLabel(t, "visa", s.id),
+    value: clients.filter((c) => visaStatusOf(c) === s.id).length,
   }));
 
+  // Client countries are free text; translate the ones we know.
+  const countryLabel = (c) => {
+    const key = `countries.${c.toLowerCase()}`;
+    const label = t(key);
+    return label === key ? c : label;
+  };
+
+  const invoicesByTypeLabeled = invoicesByType.map((i) => ({ ...i, name: t(`statsPage.${i.id}`) }));
+
   const byCountry = COUNTRIES.map((c) => ({
-    name: c,
+    name: t(`countries.${c}`),
     value: clients.filter((cl) => cl.country?.toLowerCase() === c).length,
     color: COUNTRY_COLORS[c],
   })).filter((c) => c.value > 0);
@@ -142,7 +146,7 @@ export function StatsPage() {
             <BoxSelect value={country} onChange={(e) => setCountry(e.target.value)}>
               <option value="all">{t("common.allCountries")}</option>
               {countries.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={c} value={c}>{countryLabel(c)}</option>
               ))}
             </BoxSelect>
           </div>
@@ -151,7 +155,7 @@ export function StatsPage() {
             <BoxSelect value={visaType} onChange={(e) => setVisaType(e.target.value)}>
               <option value="all">{t("common.allTypes")}</option>
               {visaTypes.map((v) => (
-                <option key={v} value={v}>{v}</option>
+                <option key={v} value={v}>{optionLabel(t, "visaType", v)}</option>
               ))}
             </BoxSelect>
           </div>
@@ -165,7 +169,7 @@ export function StatsPage() {
             {t("statsPage.newClientsPerMonth")}
           </h2>
           <p style={{ marginBottom: "24px", fontSize: "13px", color: "var(--color-muted)" }}>
-            {country === "all" ? t("common.allCountries") : country} · {visaType === "all" ? t("statsPage.allVisaTypes") : visaType}
+            {country === "all" ? t("common.allCountries") : countryLabel(country)} · {visaType === "all" ? t("statsPage.allVisaTypes") : optionLabel(t, "visaType", visaType)}
           </p>
           <div style={{ height: "280px" }}>
             {series.length === 0 ? (
@@ -192,11 +196,11 @@ export function StatsPage() {
           <h2 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "700", color: "var(--color-ink)" }}>
             {t("statsPage.visaStatusChart")}
           </h2>
-          <div style={{ height: "220px" }}>
+          <div style={{ height: "400px" }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusCounts} layout="vertical" margin={{ left: 8, right: 8 }}>
                 <XAxis type="number" hide allowDecimals={false} />
-                <YAxis type="category" dataKey="name" width={92} tick={{ fill: "var(--color-ink)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={170} interval={0} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip />
                 <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={14}>
                   {statusCounts.map((s) => (
@@ -241,8 +245,8 @@ export function StatsPage() {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={invoicesByType} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75}>
-                    {invoicesByType.map((i) => (
+                  <Pie data={invoicesByTypeLabeled} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75}>
+                    {invoicesByTypeLabeled.map((i) => (
                       <Cell key={i.name} fill={i.color} />
                     ))}
                   </Pie>
@@ -292,7 +296,7 @@ export function StatsPage() {
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={90} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip />
-                  <Bar dataKey="balance" fill="#22c55e" radius={[0, 6, 6, 0]} barSize={14} />
+                  <Bar dataKey="balance" name={t("bankingTab.amountCol")} fill="#22c55e" radius={[0, 6, 6, 0]} barSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -312,7 +316,7 @@ export function StatsPage() {
                   <XAxis dataKey="period" tick={{ fill: "#8a8a8f", fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip />
-                  <Bar dataKey="total" fill="#1F3A5F" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="total" name={t("payroll.grossTotalCol")} fill="#1F3A5F" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}

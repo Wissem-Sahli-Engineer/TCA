@@ -3,15 +3,22 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui/Button";
 import { BoxInput, BoxSelect, Field } from "../../components/ui/Input";
 import { toast } from "../../components/ui/Toast";
-import { PASSPORT_FIELDS, BUSINESS_FIELDS } from "./fields";
+import { PASSPORT_FIELDS, BUSINESS_FIELDS, CHOICE_FIELDS } from "./fields";
+import { ClientChoiceFields } from "./ClientChoiceFields";
 import { useI18n } from "../../store/i18n";
 
-const EMPTY = Object.fromEntries([...PASSPORT_FIELDS, ...BUSINESS_FIELDS].map((k) => [k, ""]));
+const EMPTY = {
+  ...Object.fromEntries([...PASSPORT_FIELDS, ...BUSINESS_FIELDS, ...CHOICE_FIELDS].map((k) => [k, ""])),
+  category: "normal",
+  visa_status: "new",
+  has_flight: false,
+  hotel_reservation: false,
+};
 
 export function AddClientPage() {
   const t = useI18n((s) => s.t);
   const navigate = useNavigate();
-  const [form, setForm] = useState({ ...EMPTY, visa_status: "" });
+  const [form, setForm] = useState(EMPTY);
 
   const [passportFile, setPassportFile] = useState(null);
   const [passportUrl, setPassportUrl] = useState("");
@@ -184,15 +191,7 @@ export function AddClientPage() {
           {t("clients.contactBusiness")}
         </h2>
         <div className="grid-2">
-          <Field label={t("clients.visaStatus")}>
-            <BoxSelect value={form.visa_status} onChange={set("visa_status")}>
-              <option value="">{t("clients.selectValue")}</option>
-              <option value="not_started">Not started</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </BoxSelect>
-          </Field>
+          <ClientChoiceFields form={form} set={set} />
           {BUSINESS_FIELDS.map((key) => (
             <Field key={key} label={t(`clients.fields.${key}`)}>
               <BoxInput

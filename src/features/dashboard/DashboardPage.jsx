@@ -14,15 +14,9 @@ import {
 import { PageTitle } from "../../components/ui/Card";
 import { useScrollReveal } from "../../lib/useScrollReveal";
 import { useI18n } from "../../store/i18n";
+import { MISSING_DOCUMENTS, VISA_STATUSES, isAlert, isInProgress, optionLabel, visaStatusOf } from "../clients/options";
 
 const COUNTRIES = ["tunisia", "libya"];
-
-const VISA_STATUS_META = [
-  { id: "not_started", name: "Not started", color: "#9ca3af" },
-  { id: "pending", name: "Pending", color: "#F0924B" },
-  { id: "approved", name: "Approved", color: "#22c55e" },
-  { id: "rejected", name: "Rejected", color: "#ef4444" },
-];
 
 function Tip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -93,16 +87,19 @@ export function DashboardPage() {
       .catch(() => {});
   }, []);
 
-  const statusCounts = VISA_STATUS_META.map((s) => ({
+  const statusCounts = VISA_STATUSES.map((s) => ({
     ...s,
-    value: clients.filter((c) => (c.visa_status || "not_started") === s.id).length,
+    name: optionLabel(t, "visa", s.id),
+    value: clients.filter((c) => visaStatusOf(c) === s.id).length,
   }));
+  const missingCount = clients.filter((c) => visaStatusOf(c) === MISSING_DOCUMENTS).length;
+  const alertCount = clients.filter(isAlert).length;
 
   const stats = [
-    { label: t("dashboard.totalClients"), value: clients.length, note: "in the database", accent: "#8B5CF6" },
-    { label: t("dashboard.pendingVisas"), value: statusCounts.find((s) => s.id === "pending")?.value || 0, note: "awaiting decision", accent: "#F0924B" },
-    { label: t("dashboard.rejected"), value: statusCounts.find((s) => s.id === "rejected")?.value || 0, note: "need follow-up", accent: "#ef4444" },
-    { label: t("dashboard.invoicesReceipts"), value: invoiceCount, note: "issued to date", accent: "#22c55e" },
+    { label: t("dashboard.totalClients"), value: clients.length, note: t("dashboard.inDatabase"), accent: "#8B5CF6" },
+    { label: t("dashboard.inProgress"), value: clients.filter((c) => isInProgress(visaStatusOf(c))).length, note: t("dashboard.awaitingDecision"), accent: "#F0924B" },
+    { label: t("dashboard.missingDocs"), value: missingCount, note: t("dashboard.needFollowUp"), accent: "#ef4444" },
+    { label: t("dashboard.invoicesReceipts"), value: invoiceCount, note: t("dashboard.issuedToDate"), accent: "#22c55e" },
   ];
 
   return (
@@ -118,7 +115,7 @@ export function DashboardPage() {
             {monthNet.toLocaleString()}
           </p>
           <p style={{ marginTop: "12px", maxWidth: "420px", fontSize: "14px", color: "rgba(255,255,255,0.6)" }}>
-            Combined gathering minus spending across Tunisia and Libya. Bank reserves: {bankTotal.toLocaleString()}.
+            {t("dashboard.treasuryNetBody").replace("{amount}", bankTotal.toLocaleString())}
           </p>
         </div>
 
@@ -138,9 +135,9 @@ export function DashboardPage() {
         <div data-reveal className="col-8 chart-card">
           <div className="chart-header">
             <h2 style={{ fontSize: "16px", fontWeight: "700", color: "var(--color-ink)" }}>
-              Treasury — gathering vs spending
+              {t("dashboard.treasuryChart")}
             </h2>
-            <span style={{ fontSize: "12px", color: "var(--color-muted)" }}>Last 6 months</span>
+            <span style={{ fontSize: "12px", color: "var(--color-muted)" }}>{t("dashboard.last6Months")}</span>
           </div>
           <div style={{ height: "280px" }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -149,8 +146,8 @@ export function DashboardPage() {
                 <XAxis dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<Tip />} />
-                <Area type="monotone" dataKey="gathering" name="Gathering" stroke="#8B5CF6" fill="#ede9fe" strokeWidth={2} />
-                <Area type="monotone" dataKey="spending" name="Spending" stroke="#F0924B" fill="transparent" strokeWidth={2} />
+                <Area type="monotone" dataKey="gathering" name={t("dashboard.gathering")} stroke="#8B5CF6" fill="#ede9fe" strokeWidth={2} />
+                <Area type="monotone" dataKey="spending" name={t("dashboard.spending")} stroke="#F0924B" fill="transparent" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -160,11 +157,12 @@ export function DashboardPage() {
           <h2 style={{ marginBottom: "16px", fontSize: "16px", fontWeight: "700", color: "var(--color-ink)" }}>
             {t("dashboard.byVisaStatus")}
           </h2>
-          <div style={{ height: "180px" }}>
+          <div style={{ height: "380px" }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusCounts} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={92} tick={{ fill: "var(--color-ink)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis type="number" hide allowDecimals={false} />
+                <YAxis type="category" dataKey="name" width={150} interval={0} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<Tip />} cursor={{ fill: "var(--color-surface)" }} />
                 <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={12}>
                   {statusCounts.map((s) => (
                     <Cell key={s.name} fill={s.color} />
@@ -174,7 +172,7 @@ export function DashboardPage() {
             </ResponsiveContainer>
           </div>
           <p style={{ marginTop: "12px", fontSize: "12.5px", color: "var(--color-muted)" }}>
-            {statusCounts.find((s) => s.id === "rejected")?.value || 0} clients need alert follow-up.
+            {alertCount} {t("dashboard.needAlertFollowUp")}
           </p>
         </div>
       </div>

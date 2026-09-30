@@ -4,6 +4,7 @@ import Magnet from "../../components/ui/magnet";
 import { toast } from "../../components/ui/Toast";
 import { withToken } from "../../store/auth";
 import { useI18n } from "../../store/i18n";
+import { alertReasons, alertText, optionLabel, visaStatusOf } from "./options";
 
 export function ClientDetailPage() {
   const t = useI18n((s) => s.t);
@@ -88,12 +89,32 @@ export function ClientDetailPage() {
     [l("email"), client.email],
     [l("entreprise"), client.entreprise_name],
     [l("codeFiscal"), client.code_fiscal],
-    [l("visaStatus"), client.visa_status],
-    [l("visaType"), client.visa_type],
-    [l("clientRelation"), client.client_relation],
+    [l("category"), optionLabel(t, "category", client.category)],
+    ...(client.category === "fair" ? [[l("fairEmail"), client.fair_email]] : []),
+    [l("visaStatus"), optionLabel(t, "visa", visaStatusOf(client))],
+    [
+      l("visaType"),
+      client.visa_type === "other" && client.visa_type_other
+        ? `${optionLabel(t, "visaType", "other")}: ${client.visa_type_other}`
+        : optionLabel(t, "visaType", client.visa_type),
+    ],
     [l("prixDossier"), client.prix_dossier],
-    [l("paiementType"), client.paiement_type],
-    [l("currency"), client.currency],
+    [l("paiementType"), optionLabel(t, "paymentMethod", client.paiement_type)],
+    [l("paymentState"), optionLabel(t, "payment", client.payment_state)],
+    [l("currency"), optionLabel(t, "currencies", client.currency)],
+    [l("hasFlight"), client.has_flight ? t("common.yes") : t("common.no")],
+    ...(client.has_flight ? [[l("flightDate"), client.flight_date]] : []),
+    [l("destination"), client.destination],
+    ...(client.category === "reservation"
+      ? [
+          ...(client.has_flight ? [[l("airlineName"), client.airline_name]] : []),
+          [l("hotelReservation"), client.hotel_reservation ? t("common.yes") : t("common.no")],
+          ...(client.hotel_reservation ? [[l("hotelName"), client.hotel_name]] : []),
+          [l("duration"), client.duration],
+          [l("reservationAmount"), client.reservation_amount],
+        ]
+      : []),
+    [l("addedBy"), client.created_by],
   ];
 
   return (
@@ -130,7 +151,7 @@ export function ClientDetailPage() {
             {client.user_photo ? (
               <img
                 src={withToken(client.user_photo)}
-                alt="Passport portrait"
+                alt={t("clients.passportPortrait")}
                 style={{ height: "280px", width: "100%", objectFit: "cover" }}
               />
             ) : (
@@ -151,6 +172,11 @@ export function ClientDetailPage() {
               <p style={{ marginTop: "4px", fontFamily: "monospace", fontSize: "13px", color: "var(--color-muted)" }}>
                 {client.passport_number}
               </p>
+              {alertReasons(client).map((r) => (
+                <p key={r.id} style={{ marginTop: "8px", fontSize: "13px", fontWeight: "600", color: "var(--color-danger)" }}>
+                  ⚠ {alertText(t, r)}
+                </p>
+              ))}
             </div>
           </div>
         </div>

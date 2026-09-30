@@ -99,13 +99,13 @@ export function GlobalSearch() {
           }}
         >
           {!hasResults ? (
-            <p style={{ fontSize: "13px", color: "var(--color-muted)", padding: "8px" }}>No matches.</p>
+            <p style={{ fontSize: "13px", color: "var(--color-muted)", padding: "8px" }}>{t("search.noMatches")}</p>
           ) : (
             <>
               {clients.length > 0 ? (
                 <div style={{ marginBottom: invoices.length ? "10px" : 0 }}>
                   <p style={{ fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-muted)", padding: "4px 8px" }}>
-                    Clients
+                    {t("search.clients")}
                   </p>
                   {clients.map((c) => (
                     <button
@@ -128,7 +128,7 @@ export function GlobalSearch() {
               {invoices.length > 0 ? (
                 <div>
                   <p style={{ fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-muted)", padding: "4px 8px" }}>
-                    Invoices & receipts
+                    {t("search.invoices")}
                   </p>
                   {invoices.map((inv) => (
                     <button

@@ -24,22 +24,18 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<!-- Dev-only: allows plain HTTP to the backend's LAN IP while it isn't
-	     deployed behind HTTPS yet. Remove this whole NSAppTransportSecurity
-	     block (and switch src/lib/apiBase.js to your real https:// backend)
-	     before shipping to the App Store. -->
+	<!-- Dev-only: allows plain HTTP to any local-network address (your Mac's
+	     LAN IP, whatever it is today) while the backend isn't deployed behind
+	     HTTPS yet. NSAllowsLocalNetworking covers RFC1918 ranges and *.local,
+	     so this survives your Mac's IP changing between networks — you still
+	     need to update NATIVE_API_BASE in src/lib/apiBase.js to match, but
+	     Info.plist itself doesn't need touching again. Remove this whole
+	     NSAppTransportSecurity block (and switch apiBase.js to your real
+	     https:// backend) before shipping to the App Store. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>192.168.1.197</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-				<key>NSIncludesSubdomains</key>
-				<false/>
-			</dict>
-		</dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

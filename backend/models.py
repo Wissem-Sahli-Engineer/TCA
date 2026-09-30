@@ -1,7 +1,41 @@
 from datetime import date, datetime, timezone
 
-from pydantic import field_validator
+from pydantic import ValidationInfo, field_validator, model_validator
 from sqlmodel import Field, SQLModel
+
+# Allowed values for the client pick-lists. The labels (English/Arabic) live
+# in src/i18n/translations.js under visa.*, visaType.*, paymentMethod.*,
+# category.* and payment.*; the web and iOS apps show the same lists.
+VISA_STATUSES = (
+    "new",
+    "document_review",
+    "missing_documents",
+    "ready_for_invitation",
+    "accepted_in_system",
+    "invitation_issued",
+    "client_notified",
+    "awaiting_passport",
+    "passport_received",
+    "file_submitted",
+    "awaiting_result",
+    "passport_ready",
+    "client_notified_passport_ready",
+    "delivered",
+    "closed",
+)
+VISA_TYPES = (
+    "pre_entry_swift",
+    "government_invitation",
+    "first_entry_connect",
+    "companion_s1_s2",
+    "study_x1_x2",
+    "visa_z",
+    "other",  # free text goes in visa_type_other
+)
+PAYMENT_METHODS = ("cash", "card", "transfer", "cheque")
+PAYMENT_STATES = ("unpaid", "partial", "paid")
+CLIENT_CATEGORIES = ("normal", "fair", "reservation")
+CURRENCIES = ("USD", "EUR", "TND", "LYD")
 
 
 class ClientBase(SQLModel):
@@ -24,14 +58,31 @@ class ClientBase(SQLModel):
     entreprise_name: str | None = Field(default=None, max_length=150)
     code_fiscal: str | None = Field(default=None, max_length=50)
 
-    # Visa / relation
+    # Classification: which tab the client is listed under
+    category: str = Field(default="normal", max_length=20)
+    fair_email: str | None = Field(default=None, max_length=150)  # fair clients only
+
+    # Visa
     visa_status: str | None = Field(default=None, max_length=50)
     visa_type: str | None = Field(default=None, max_length=50)
-    client_relation: str | None = Field(default=None, max_length=50)
+    visa_type_other: str | None = Field(default=None, max_length=150)  # when visa_type == "other"
+
+    # Travel (any client)
+    has_flight: bool = False
+    flight_date: date | None = None  # only with has_flight
+    destination: str | None = Field(default=None, max_length=150)
+
+    # Reservation details (reservation clients only)
+    airline_name: str | None = Field(default=None, max_length=150)
+    hotel_reservation: bool = False
+    hotel_name: str | None = Field(default=None, max_length=150)  # only with hotel_reservation
+    duration: str | None = Field(default=None, max_length=50)
+    reservation_amount: float | None = None
 
     # Billing
     prix_dossier: float | None = None
     paiement_type: str | None = Field(default=None, max_length=50)
+    payment_state: str | None = Field(default=None, max_length=20)
     currency: str | None = Field(default=None, max_length=10)
 
 
@@ -40,6 +91,8 @@ class Client(ClientBase, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     photo_path: str | None = Field(default=None, max_length=255)
+    # Name of the signed-in user who added the client — set by the server.
+    created_by: str | None = Field(default=None, max_length=150)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -50,11 +103,52 @@ class ClientCreate(ClientBase):
 
     @field_validator("*", mode="before")
     @classmethod
-    def blank_to_none(cls, v):
+    def blank_to_none(cls, v, info: ValidationInfo):
         if isinstance(v, str):
-            v = v.strip()
-            return v or None
+            v = v.strip() or None
+        if v is None and info.field_name == "category":
+            return "normal"
+        if v is None and info.field_name in ("has_flight", "hotel_reservation"):
+            return False
         return v
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, v):
+        return v.strip().upper() if isinstance(v, str) and v.strip() else v
+
+    @field_validator("visa_status", "visa_type", "paiement_type", "payment_state", "category", "currency")
+    @classmethod
+    def check_choice(cls, v, info: ValidationInfo):
+        allowed = {
+            "visa_status": VISA_STATUSES,
+            "visa_type": VISA_TYPES,
+            "paiement_type": PAYMENT_METHODS,
+            "payment_state": PAYMENT_STATES,
+            "category": CLIENT_CATEGORIES,
+            "currency": CURRENCIES,
+        }[info.field_name]
+        if v is not None and v not in allowed:
+            raise ValueError(f"{info.field_name} must be one of: {', '.join(allowed)}")
+        return v
+
+    @model_validator(mode="after")
+    def drop_irrelevant_fields(self):
+        if self.category != "fair":
+            self.fair_email = None
+        if self.visa_type != "other":
+            self.visa_type_other = None
+        if not self.has_flight:
+            self.flight_date = None
+            self.airline_name = None
+        if self.category != "reservation":
+            self.airline_name = None
+            self.hotel_reservation = False
+            self.duration = None
+            self.reservation_amount = None
+        if not self.hotel_reservation:
+            self.hotel_name = None
+        return self
 
     @field_validator("passport_number")
     @classmethod

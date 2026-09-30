@@ -189,7 +189,7 @@ export function InvoicesTab({ country }) {
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--color-line)" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: "700" }}>{t("invoicesTab.documentsFor")} — {country}</h2>
+          <h2 style={{ fontSize: "16px", fontWeight: "700" }}>{t("invoicesTab.documentsFor")} — {t(`countries.${country}`)}</h2>
         </div>
         <table className="data-table">
           <thead>
@@ -212,7 +212,7 @@ export function InvoicesTab({ country }) {
               invoices.map((inv) => (
                 <tr key={inv.id}>
                   <td style={{ fontWeight: "600" }}>{inv.number}</td>
-                  <td style={{ textTransform: "capitalize" }}>{inv.doc_type}</td>
+                  <td>{inv.doc_type === "recu" ? t("invoicesTab.recu") : t("invoicesTab.facture")}</td>
                   <td>{inv.client_name}</td>
                   <td>{inv.issue_date}</td>
                   <td style={{ display: "flex", gap: "8px" }}>

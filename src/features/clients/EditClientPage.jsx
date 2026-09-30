@@ -3,11 +3,12 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "../../components/ui/Button";
 import { BoxInput, BoxSelect, Field } from "../../components/ui/Input";
 import { toast } from "../../components/ui/Toast";
-import { PASSPORT_FIELDS, BUSINESS_FIELDS } from "./fields";
+import { PASSPORT_FIELDS, BUSINESS_FIELDS, CHOICE_FIELDS } from "./fields";
+import { ClientChoiceFields } from "./ClientChoiceFields";
 import { withToken } from "../../store/auth";
 import { useI18n } from "../../store/i18n";
 
-const ALL_FIELDS = [...PASSPORT_FIELDS, ...BUSINESS_FIELDS, "visa_status"];
+const ALL_FIELDS = [...PASSPORT_FIELDS, ...BUSINESS_FIELDS, ...CHOICE_FIELDS];
 
 export function EditClientPage() {
   const t = useI18n((s) => s.t);
@@ -115,15 +116,7 @@ export function EditClientPage() {
           {t("clients.contactBusiness")}
         </h2>
         <div className="grid-2">
-          <Field label={t("clients.visaStatus")}>
-            <BoxSelect value={form.visa_status} onChange={set("visa_status")}>
-              <option value="">{t("clients.selectValue")}</option>
-              <option value="not_started">Not started</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </BoxSelect>
-          </Field>
+          <ClientChoiceFields form={form} set={set} />
           {BUSINESS_FIELDS.map((key) => (
             <Field key={key} label={t(`clients.fields.${key}`)}>
               <BoxInput

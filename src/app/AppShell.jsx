@@ -128,7 +128,7 @@ export function AppShell() {
         <div className="sidebar-header">
           <img
             src="./logo.png"
-            alt="Logo"
+            alt={t("shell.logo")}
             className="sidebar-logo"
           />
           <div data-label className="sidebar-header-text">
@@ -136,7 +136,7 @@ export function AppShell() {
               TCA
             </span>
             <span style={{ whiteSpace: "nowrap", color: "var(--color-muted)", fontSize: "10px" }}>
-              Tunisian consulting agency
+              {t("shell.tagline")}
             </span>
           </div>
         </div>
@@ -197,7 +197,7 @@ export function AppShell() {
               closeSidebarOnMobile();
             }}
             className="nav-link"
-            title="AI Chatbot"
+            title={t("nav.aiChatbot")}
             style={{ width: "100%", textAlign: "left" }}
           >
             <IconBot size={18} style={{ flexShrink: 0 }} />
@@ -208,7 +208,7 @@ export function AppShell() {
         </nav>
 
         <p data-label className="sidebar-footer">
-          Visa operations
+          {t("shell.footer")}
         </p>
       </aside>
 
@@ -222,7 +222,7 @@ export function AppShell() {
                 type="button"
                 onClick={toggleSidebar}
                 className="icon-btn"
-                aria-label="Toggle sidebar"
+                aria-label={t("shell.toggleSidebar")}
               >
                 <IconMenu />
               </button>

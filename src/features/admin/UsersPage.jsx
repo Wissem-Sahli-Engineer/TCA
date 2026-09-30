@@ -50,7 +50,7 @@ export function UsersPage() {
       });
       if (!res.ok) throw new Error("fail");
       load();
-      toast(`${t("users.roleChanged")} ${role}`, "ok");
+      toast(`${t("users.roleChanged")} ${t(`roles.${role}`)}`, "ok");
     } catch {
       toast(t("users.roleChangeFailed"), "err");
     } finally {
@@ -153,15 +153,15 @@ export function UsersPage() {
                         disabled={busyId === u.id}
                         onChange={(e) => changeRole(u.id, e.target.value)}
                       >
-                        <option value="Agent">Agent</option>
-                        <option value="Admin">Admin</option>
+                        <option value="Agent">{t("roles.Agent")}</option>
+                        <option value="Admin">{t("roles.Admin")}</option>
                       </BoxSelect>
                     ) : (
-                      u.role
+                      t(`roles.${u.role}`)
                     )}
                   </td>
                   <td>
-                    <span className={`badge ${STATUS_TONE[u.status] || "badge-brand"}`}>{u.status}</span>
+                    <span className={`badge ${STATUS_TONE[u.status] || "badge-brand"}`}>{t(`status.${u.status}`)}</span>
                   </td>
                   <td>
                     {u.id !== currentUser?.id ? (

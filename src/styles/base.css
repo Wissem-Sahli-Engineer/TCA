@@ -15,6 +15,13 @@ body,
   min-height: 100%;
 }
 
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--color-surface);
@@ -84,4 +91,15 @@ a {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-muted);
+}
+
+/* iOS Safari/WKWebView auto-zooms into any focused field whose font size is
+   under 16px, and the page then stays zoomed. Keep fields at 16px on touch
+   screens so it never triggers. */
+@media (max-width: 899px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }

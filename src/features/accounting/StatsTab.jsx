@@ -26,7 +26,7 @@ export function StatsTab({ country, currency }) {
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <div>
-          <h2 style={{ fontSize: "18px", fontWeight: "700" }}>{t("statsTab.title")} {country}</h2>
+          <h2 style={{ fontSize: "18px", fontWeight: "700" }}>{t("statsTab.title")} {t(`countries.${country}`)}</h2>
           <p style={{ fontSize: "13px", color: "var(--color-muted)", marginTop: "2px" }}>
             {t("statsTab.subtitle")} {currency}.
           </p>

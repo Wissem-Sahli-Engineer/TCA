@@ -43,7 +43,7 @@ const DEFAULT_ICONS = {
       <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.751 20.105a8.25 8.25 0 0 1 16.498 0 .75.75 0 0 1-.437.695A18.683 18.683 0 0 1 12 22.5c-2.786 0-5.433-.6-7.812-1.7a.75.75 0 0 1-.437-.695Z" clipRule="evenodd" />
     </svg>
   ),
-  museum: (
+  fair: (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
       <path fillRule="evenodd" d="M11.47 2.47a.75.75 0 0 1 1.06 0l9 9a.75.75 0 0 1-.53 1.28H3a.75.75 0 0 1-.53-1.28l9-9Z" />
       <path fillRule="evenodd" d="M3 14.25a.75.75 0 0 1 .75-.75h16.5a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75ZM4.5 16.5a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V17.25a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V17.25a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V17.25a.75.75 0 0 1 .75-.75Zm5 0a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V17.25a.75.75 0 0 1 .75-.75ZM2.25 22.5h19.5a.75.75 0 0 0 0-1.5H2.25a.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
@@ -63,7 +63,7 @@ const DEFAULT_ICONS = {
 
 const DEFAULT_CLIENT_TABS = [
   { id: 'normal', label: 'Normal' },
-  { id: 'museum', label: 'Museum' },
+  { id: 'fair', label: 'Fair' },
   { id: 'reservation', label: 'Reservation' },
   { id: 'alert', label: 'Alert' },
 ];

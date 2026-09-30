@@ -18,8 +18,8 @@ function accountingTabs(t) {
 }
 
 const COUNTRY_META = {
-  tunisia: { label: "Tunisia", currency: "TND", flag: "🇹🇳" },
-  libya: { label: "Libya", currency: "LYD", flag: "🇱🇾" },
+  tunisia: { currency: "TND", flag: "🇹🇳" },
+  libya: { currency: "LYD", flag: "🇱🇾" },
 };
 
 export function AccountingPage({ defaultCountry = "tunisia" }) {
@@ -43,7 +43,7 @@ export function AccountingPage({ defaultCountry = "tunisia" }) {
     else if (location.pathname.includes("tunisia")) setCountry("tunisia");
   }, [location.pathname]);
 
-  const meta = COUNTRY_META[country] || COUNTRY_META.tunisia;
+  const meta = { ...(COUNTRY_META[country] || COUNTRY_META.tunisia), label: t(`countries.${country}`) };
 
   useEffect(() => {
     Promise.all([

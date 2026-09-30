@@ -148,7 +148,7 @@ export function BankingTab({ country, currency, flag }) {
             </div>
           ))}
           {accounts.length === 0 ? (
-            <p style={{ color: "var(--color-muted)", fontSize: "14px" }}>{t("bankingTab.noAccounts")} {country}.</p>
+            <p style={{ color: "var(--color-muted)", fontSize: "14px" }}>{t("bankingTab.noAccounts")} {t(`countries.${country}`)}.</p>
           ) : null}
         </div>
 

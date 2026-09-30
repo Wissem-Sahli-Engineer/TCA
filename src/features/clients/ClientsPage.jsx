@@ -6,19 +6,15 @@ import { Card } from "../../components/ui/nav";
 import Magnet from "../../components/ui/magnet";
 import { withToken } from "../../store/auth";
 import { useI18n } from "../../store/i18n";
+import { alertReasons, alertText, isAlert, optionLabel, paymentTone, visaStatusOf, visaTone } from "./options";
 
-const CLIENTS_TABS = [
-  { id: "normal", label: "All clients" },
-  { id: "museum", label: "Museum" },
-  { id: "reservation", label: "Reservation" },
-  { id: "alert", label: "Alert" },
-];
-
-const VISA_BADGE = {
-  not_started: "badge-brand",
-  pending: "badge-warning",
-  approved: "badge-success",
-  rejected: "badge-danger",
+// "normal" is the "All clients" tab; Fair/Reservation filter by category,
+// Alert by the rules in alertReasons().
+const TAB_FILTERS = {
+  normal: () => true,
+  fair: (c) => c.category === "fair",
+  reservation: (c) => c.category === "reservation",
+  alert: (c) => isAlert(c),
 };
 
 export function ClientsPage() {
@@ -27,6 +23,14 @@ export function ClientsPage() {
   const [clients, setClients] = useState([]);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState("normal");
+
+  const CLIENTS_TABS = [
+    { id: "normal", label: t("clients.tabAll") },
+    { id: "fair", label: t("clients.tabFair") },
+    { id: "reservation", label: t("clients.tabReservation") },
+    { id: "alert", label: t("clients.tabAlert") },
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +48,7 @@ export function ClientsPage() {
   }, []);
 
   const filtered = clients.filter((c) => {
+    if (!TAB_FILTERS[tab](c)) return false;
     const q = query.toLowerCase();
     const name = `${c.given_name} ${c.surname}`.toLowerCase();
     return name.includes(q) || (c.passport_number || "").toLowerCase().includes(q) || (c.phone || "").includes(q);
@@ -52,7 +57,7 @@ export function ClientsPage() {
   return (
     <div className="page-container-max">
       <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-        <Card tabs={CLIENTS_TABS} maxWidth={460} />
+        <Card tabs={CLIENTS_TABS} activeTab={tab} onTabChange={setTab} maxWidth={460} />
       </div>
 
       <PageTitle
@@ -93,12 +98,13 @@ export function ClientsPage() {
                 <th>{t("clients.phone")}</th>
                 <th>{t("clients.nationality")}</th>
                 <th>{t("clients.visaStatus")}</th>
+                <th>{t("clients.paymentState")}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-muted)" }}>
+                  <td colSpan={7} style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-muted)" }}>
                     {error ? "Could not reach the server." : t("clients.noMatches")}
                   </td>
                 </tr>
@@ -123,14 +129,24 @@ export function ClientsPage() {
                     </td>
                     <td style={{ fontWeight: "600", color: "var(--color-ink)" }}>
                       {c.given_name} {c.surname}
+                      {alertReasons(c).map((r) => (
+                        <div key={r.id} style={{ marginTop: "2px", fontSize: "11.5px", fontWeight: "500", color: "var(--color-danger)" }}>
+                          ⚠ {alertText(t, r)}
+                        </div>
+                      ))}
                     </td>
                     <td style={{ fontFamily: "monospace", fontSize: "13px" }}>{c.passport_number}</td>
                     <td style={{ color: "var(--color-muted)" }}>{c.phone}</td>
                     <td>{c.nationality}</td>
                     <td>
-                      {c.visa_status ? (
-                        <span className={`badge ${VISA_BADGE[c.visa_status] || "badge-brand"}`}>
-                          {c.visa_status.replace("_", " ")}
+                      <span className={`badge ${visaTone(visaStatusOf(c))}`}>
+                        {optionLabel(t, "visa", visaStatusOf(c))}
+                      </span>
+                    </td>
+                    <td>
+                      {c.payment_state ? (
+                        <span className={`badge ${paymentTone(c.payment_state)}`}>
+                          {optionLabel(t, "payment", c.payment_state)}
                         </span>
                       ) : (
                         <span style={{ color: "var(--color-muted)" }}>—</span>

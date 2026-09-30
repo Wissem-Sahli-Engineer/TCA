@@ -9,3 +9,7 @@ __pycache__
 .idea
 .vscode
 uploads
+
+# Python env kept out of iCloud Drive (".nosync" is never synced or
+# offloaded); .venv is a symlink to it.
+.venv.nosync

@@ -8,7 +8,7 @@ import { Capacitor } from "@capacitor/core";
 // TODO before shipping to the App Store: point this at your deployed HTTPS
 // backend instead of a LAN IP, and remove the matching ATS exception in
 // ios/App/App/Info.plist.
-const NATIVE_API_BASE = "http://192.168.1.197:8001";
+const NATIVE_API_BASE = "http://10.30.30.41:8001";
 
 export const API_BASE = Capacitor.isNativePlatform() ? NATIVE_API_BASE : "";
 

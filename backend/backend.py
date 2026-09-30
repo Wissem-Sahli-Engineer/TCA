@@ -112,18 +112,36 @@ FIELDS = [
 PUBLIC_API_PREFIX = os.getenv("PUBLIC_API_PREFIX", "/api")
 
 
-def client_out(client: Client) -> dict:
+def passport_images(session: Session, client_ids: list[int] | None = None) -> dict[int, str]:
+    """URL of each client's passport scan among their uploaded files — an
+    image whose name mentions "passport", else their first uploaded image
+    (the Add client page uploads the passport first). Used as the picture
+    for clients that have no photo of their own."""
+    query = select(ClientFile).where(ClientFile.content_type.like("image/%")).order_by(ClientFile.id)
+    if client_ids is not None:
+        query = query.where(ClientFile.client_id.in_(client_ids))
+    chosen: dict[int, ClientFile] = {}
+    for f in session.exec(query).all():
+        current = chosen.get(f.client_id)
+        if current is None or ("passport" in f.filename.lower() and "passport" not in current.filename.lower()):
+            chosen[f.client_id] = f
+    return {cid: f"{PUBLIC_API_PREFIX}/clients/{cid}/files/{f.id}" for cid, f in chosen.items()}
+
+
+def client_out(client: Client, passport_image: str = "") -> dict:
     data = client.model_dump(exclude={"photo_path"})
     data["user_photo"] = (
         f"{PUBLIC_API_PREFIX}/clients/{client.id}/photo" if client.photo_path else ""
     )
+    data["passport_image"] = passport_image
     return data
 
 
 @app.get("/clients")
 def get_clients(session: Session = Depends(get_session)):
     clients = session.exec(select(Client).order_by(Client.id)).all()
-    return [client_out(c) for c in clients]
+    passports = passport_images(session)
+    return [client_out(c, passports.get(c.id, "")) for c in clients]
 
 
 @app.get("/clients/{client_id}/photo")
@@ -138,8 +156,11 @@ def get_client_photo(client_id: int, session: Session = Depends(get_session)):
 
 
 @app.post("/clients", status_code=201)
-def add_client(data: ClientCreate, session: Session = Depends(get_session)):
+def add_client(
+    data: ClientCreate, user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
     client = Client.model_validate(data.model_dump(exclude={"user_photo"}))
+    client.created_by = user.name
     session.add(client)
     photo_path = None
     try:
@@ -192,7 +213,7 @@ def update_client(client_id: int, data: ClientCreate, session: Session = Depends
     session.refresh(client)
     if new_photo_path and old_photo_path and old_photo_path != new_photo_path:
         delete_photo(old_photo_path)
-    return {"status": "success", "client": client_out(client)}
+    return {"status": "success", "client": client_out(client, passport_images(session, [client.id]).get(client.id, ""))}
 
 
 @app.delete("/clients/{client_id}")
