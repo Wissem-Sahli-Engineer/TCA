@@ -35,7 +35,7 @@ from backend.models import (
 )
 from backend.photos import UPLOADS_DIR, delete_photo, save_client_file, save_client_photo
 from backend.invoices import generate_invoice_pdf
-from backend.payroll import generate_payslip_pdf, parse_pointage
+from backend.payroll import DEFAULT_COMPANY, compute_payslip, generate_payslip_pdf, legacy_details, parse_pointage
 from backend.auth import (
     create_access_token,
     decode_access_token,
@@ -1035,18 +1035,64 @@ async def parse_pointage_file(file: UploadFile = File(...)):
     return rows
 
 
+def payslip_out(p: Payslip) -> dict:
+    data = p.model_dump(exclude={"details_json"})
+    data["net_total"] = p.net_total if p.net_total is not None else p.gross_total
+    data["details"] = json.loads(p.details_json) if p.details_json else legacy_details(p.hours, p.hourly_rate)
+    return data
+
+
 @app.get("/payroll/payslips")
 def list_payslips(session: Session = Depends(get_session)):
-    return session.exec(select(Payslip).order_by(Payslip.id.desc())).all()
+    return [payslip_out(p) for p in session.exec(select(Payslip).order_by(Payslip.id.desc())).all()]
 
 
 @app.post("/payroll/payslips", status_code=201)
 def create_payslip(data: PayslipCreate, session: Session = Depends(get_session)):
-    payslip = Payslip(**data.model_dump(), gross_total=round(data.hours * data.hourly_rate, 3))
+    if data.hourly_rate <= 0:
+        raise HTTPException(status_code=422, detail="Hourly rate must be greater than 0")
+    if data.advances < 0 or data.pause < 0:
+        raise HTTPException(status_code=422, detail="Advances and pause cannot be negative")
+
+    if data.rows:
+        result = compute_payslip(data.rows, {
+            "rate": data.hourly_rate, "advances": data.advances, "pause": data.pause,
+            "m25": data.m25, "m50": data.m50, "m100": data.m100,
+        })
+        result["company"] = {
+            key: (getattr(data, key) or "").strip() or default for key, default in DEFAULT_COMPANY.items()
+        }
+        payslip = Payslip(
+            employee_name=data.employee_name,
+            matricule=data.matricule,
+            period_label=f"{result['month']:02d}/{result['year']}",
+            hours=round(result["worked_minutes"] / 60, 2),
+            hourly_rate=data.hourly_rate,
+            currency=data.currency,
+            gross_total=result["gross"],
+            advances=data.advances,
+            net_total=result["net"],
+            details_json=json.dumps(result, ensure_ascii=False),
+        )
+    else:
+        # Older clients (the iOS app) only send hours × rate.
+        if data.hours is None:
+            raise HTTPException(status_code=422, detail="Either rows or hours is required")
+        gross = round(data.hours * data.hourly_rate, 3)
+        payslip = Payslip(
+            employee_name=data.employee_name,
+            period_label=data.period_label or date.today().strftime("%m/%Y"),
+            hours=data.hours,
+            hourly_rate=data.hourly_rate,
+            currency=data.currency,
+            gross_total=gross,
+            net_total=gross,
+        )
+
     session.add(payslip)
     session.commit()
     session.refresh(payslip)
-    return payslip
+    return payslip_out(payslip)
 
 
 @app.get("/payroll/payslips/{payslip_id}/pdf")

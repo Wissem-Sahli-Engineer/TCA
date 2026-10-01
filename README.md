@@ -15,7 +15,7 @@ An internal ERP for **Tunisie Conseil et Assistance (TCA)** — client/visa case
 - **Human Resources**
   - **My Requests** — admin's own request log (name, description, status).
   - **Employee Requests** — vacations / salary advances / loans, submitted by any signed-in user.
-  - **Fiche de paie** (Payroll) — upload an Excel timesheet ("pointage"), enter each employee's hourly rate, generate a payslip PDF.
+  - **Fiche de paie** (Payroll) — upload the ZKTeco K40 time-clock export (.xls/.xlsx), enter the hourly rate and advances, and generate the Arabic « بطاقة خلاص الأجر » PDF (base, +25% overtime, +50% weekend, +100% holiday, daily detail) — same rules and layout as `paie_app.html`.
 - **AI Chatbot** — a full assistant page (persists across navigation) and a small popup panel with a "Live helper" mode that attaches a snapshot of the current window to your question.
 - **Role-based sidebar** — `Admin` sees everything; any other role sees Dashboard/Stats/Clients + Employee Requests + Chatbot only.
 - **Authentication** — a single seeded Admin account; everyone else requests access, and the admin approves or rejects by email (or in-app under **Users**) before they can sign in.

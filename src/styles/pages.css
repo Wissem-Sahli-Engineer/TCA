@@ -283,3 +283,86 @@
   font-weight: 600;
   color: var(--color-ink);
 }
+
+/* ---------- Payroll (fiche de paie) ---------- */
+.payroll-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 899px) {
+  .payroll-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.payroll-step {
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+}
+
+.payroll-advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-brand);
+}
+
+.payroll-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 560px) {
+  .payroll-tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.payroll-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.payroll-tile span {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.payroll-tile strong {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+.payroll-tile-net {
+  background-color: var(--color-card-ink-bg);
+}
+
+.payroll-tile-net span,
+.payroll-tile-net strong {
+  color: var(--color-card-ink-text);
+}
+
+.payroll-empty {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.payroll-empty h3 {
+  margin: 12px 0 6px;
+  color: var(--color-ink);
+}

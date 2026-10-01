@@ -303,12 +303,37 @@ class Payslip(PayslipBase, table=True):
     __tablename__ = "payslips"
 
     id: int | None = Field(default=None, primary_key=True)
+    matricule: str | None = Field(default=None, max_length=50)
     gross_total: float
+    advances: float = Field(default=0)
+    net_total: float | None = None
+    # Full computed breakdown (summary lines, daily detail, parameters) so the
+    # PDF can be re-rendered exactly; null for payslips made before the
+    # ZKTeco import existed.
+    details_json: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class PayslipCreate(PayslipBase):
-    pass
+class PayslipCreate(SQLModel):
+    """Body of POST /payroll/payslips. With `rows` (from /payroll/parse-pointage)
+    the payslip is computed like paie_app.html; without them it falls back to
+    the old hours × rate request still sent by the iOS app."""
+
+    employee_name: str = Field(max_length=150)
+    hourly_rate: float
+    currency: str = Field(default="TND", max_length=10)
+    matricule: str | None = None
+    rows: list[dict] | None = None
+    advances: float = 0
+    pause: float = 60
+    m25: float = 25
+    m50: float = 50
+    m100: float = 100
+    company_name: str | None = None
+    company_address: str | None = None
+    company_contact: str | None = None
+    period_label: str | None = None
+    hours: float | None = None
 
 
 class User(SQLModel, table=True):

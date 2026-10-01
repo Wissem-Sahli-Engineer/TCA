@@ -1,64 +1,134 @@
-\documentclass[a4paper,11pt]{article}
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
-\usepackage[scaled]{helvet}
-\renewcommand{\familydefault}{\sfdefault}
-\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2cm,right=2cm]{geometry}
+% =====================================================================
+%  بطاقة خلاص الأجر — layout and colours follow paie_app.html.
+%  Compiled with XeLaTeX by backend/payroll.py (tokens %%LIKE_THIS%% are
+%  substituted first). Tables are written with their columns reversed so
+%  they read right-to-left without depending on bidi's tabular reversal.
+% =====================================================================
+\documentclass[a4paper]{article}
+\usepackage[a4paper,margin=12mm]{geometry}
+\usepackage{fontspec}
+\usepackage[bidi=default]{babel}
+\babelprovide[import]{arabic}
+\babelprovide[main,import]{english}
+\babelfont{rm}[
+  Path = ./, Extension = .ttf,
+  UprightFont = Amiri-Regular, BoldFont = Amiri-Bold,
+  ItalicFont = Amiri-Italic, BoldItalicFont = Amiri-BoldItalic
+]{Amiri}
 \usepackage[table]{xcolor}
-\usepackage{array,graphicx}
+\usepackage{array,longtable,graphicx,tikz,calc}
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
 
-\definecolor{navy}{HTML}{1F3A5F}
-\definecolor{gold}{HTML}{B8860B}
-\definecolor{lightbg}{HTML}{F4F7F9}
+\definecolor{navy}{HTML}{243F52}
+\definecolor{olive}{HTML}{9AA23E}
+\definecolor{ink}{HTML}{1A2026}
+\definecolor{line}{HTML}{DFE4E9}
+\definecolor{greyhead}{HTML}{E9EDF0}
+\definecolor{netbg}{HTML}{EEF3E2}
+\definecolor{infobg}{HTML}{F4F6F8}
+\definecolor{weekend}{HTML}{FBFAF0}
+\definecolor{danger}{HTML}{C0392B}
+\definecolor{meta}{HTML}{8A97A1}
+\definecolor{addr}{HTML}{55636D}
 
-\newcommand{\employeeName}{%%EMPLOYEE_NAME%%}
-\newcommand{\periodLabel}{%%PERIOD_LABEL%%}
-\newcommand{\hoursWorked}{%%HOURS%%}
-\newcommand{\hourlyRate}{%%HOURLY_RATE%%}
-\newcommand{\grossTotal}{%%GROSS_TOTAL%%}
-\newcommand{\currencyLabel}{%%CURRENCY%%}
-\newcommand{\payslipNo}{%%PAYSLIP_NO%%}
-\newcommand{\issueDate}{%%ISSUE_DATE%%}
+% Keep \ar{} to Arabic text (+ digits): XeTeX's bidi here reverses Latin
+% words and scrambles \color when they sit inside an RTL run, so Latin
+% values and colour changes always go outside it.
+\newcommand\ar[1]{\foreignlanguage{arabic}{#1}}
+% Symmetric vertical cell padding (arraystretch alone pads only the top);
+% every column carries it so the cells of a row share one baseline.
+\newcommand\cellpad{}
+\newcommand\setpad[2]{\renewcommand\cellpad{\rule[-#2]{0pt}{#1}}}
+\newcommand\lbl[1]{\textcolor{navy}{\bfseries\ar{#1 :}}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash\cellpad}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash\cellpad}p{#1}}
+\newif\ifhasdaily \hasdaily%%HAS_DAILY%%
 
 \begin{document}
+\color{ink}
 
-{\color{navy}\bfseries\Large Tunisie Conseil et Assistance TCA Sarl}\\[2pt]
-{\color{gold}\small Fiche de paie}
+% ---------- meta line ----------
+{\color{meta}\fontsize{7.5}{9}\selectfont %%GENERATED_AT%%\hfill\ar{أرت} Rihabe - %%META_YEAR%% - \ar{بطاقة أجر}\par}
+\vspace{2pt}
 
-\vspace{0.8cm}
-\noindent\textcolor{gold}{\rule{\linewidth}{1.2pt}}
-\vspace{0.6cm}
+% ---------- header ----------
+\noindent\rlap{\raisebox{-\height}{%
+  \begin{tikzpicture}
+    \clip (0,0) circle (0.7cm);
+    \fill[olive] (0,0) circle (0.7cm);
+    \node at (0,0) {\includegraphics[width=1.4cm,height=1.4cm,keepaspectratio]{logo.png}};
+  \end{tikzpicture}}}%
+\begin{minipage}[t]{\linewidth}
+  \centering
+  {\color{navy}\fontsize{17}{22}\selectfont\bfseries\ar{%%COMPANY_NAME%%}\par}
+  {\color{navy}\fontsize{9}{11}\selectfont\bfseries Tunisia Consultancy \& Assistance\par}
+  \vspace{2pt}
+  {\color{addr}\fontsize{8}{10}\selectfont\ar{%%COMPANY_ADDRESS%%}\par}
+  {\color{addr}\fontsize{7.5}{9}\selectfont %%COMPANY_CONTACT%%\par}
+\end{minipage}
 
-\begin{tabular}{@{}ll@{}}
-\textbf{Employ\'e} & \employeeName \\[4pt]
-\textbf{P\'eriode} & \periodLabel \\[4pt]
-\textbf{Num\'ero} & \payslipNo \\[4pt]
-\textbf{Date d'\'emission} & \issueDate \\
-\end{tabular}
+\vspace{6pt}
+{\color{navy}\rule{\linewidth}{1.1pt}}
+\vspace{4pt}
 
-\vspace{1cm}
+{\centering\color{navy}\fontsize{14}{18}\selectfont\bfseries\ar{بطاقة خلاص الأجر}\par}
+\vspace{8pt}
 
-\renewcommand{\arraystretch}{1.8}
-\begin{tabular}{|>{\columncolor{navy}\color{white}\bfseries}p{7cm}|>{\columncolor{navy}\color{white}\bfseries}p{7cm}|}
-\hline
-D\'esignation & Montant \\
-\hline
-\rowcolor{lightbg} Heures travaill\'ees & \hoursWorked ~h \\
-\hline
-\rowcolor{lightbg} Taux horaire & \hourlyRate ~\currencyLabel /h \\
-\hline
-\end{tabular}
+% ---------- info box ----------
+\noindent\begin{tikzpicture}
+  \node[fill=infobg, rounded corners=7pt, inner xsep=13pt, inner ysep=9pt] {%
+    \fontsize{10}{13}\selectfont
+    \renewcommand{\arraystretch}{1.45}%
+    \begin{tabular}{@{}R{(\linewidth-62pt)/2}@{\hspace{10pt}}R{(\linewidth-62pt)/2}@{}}
+      \textcolor{navy}{\bfseries %%MATRICULE%%}~\lbl{المعرّف} &
+      \textcolor{navy}{\bfseries %%EMPLOYEE_NAME%%}~\lbl{العون} \\
+      \ar{%%RATE%%}~\lbl{أجر الساعة} &
+      %%PERIOD%%~\lbl{الشهر} \\
+      %%ABSENCES%%~\lbl{الغيابات} &
+      %%JOURS%%~\lbl{أيام العمل} \\
+    \end{tabular}};
+\end{tikzpicture}
 
-\vspace{0.8cm}
+\vspace{12pt}
 
-\hfill
-\colorbox{gold}{\parbox{7cm}{\centering\color{white}\bfseries\large
-  Salaire brut : \grossTotal ~\currencyLabel
-}}
+% ---------- summary ----------
+\noindent\begin{tikzpicture}
+  \node[inner sep=0pt] (sum) {%
+    \fontsize{10}{13}\selectfont
+    \setlength{\tabcolsep}{9pt}\setpad{19pt}{8pt}%
+    \begin{tabular}{C{0.28\linewidth-18pt}C{0.22\linewidth-18pt}R{0.5\linewidth-18pt}}
+      \rowcolor{greyhead}
+      {\bfseries\color{navy}\ar{المبلغ}} & {\bfseries\color{navy}\ar{الساعات}} & {\bfseries\color{navy}\ar{العنصر}} \\
+      \arrayrulecolor{line}\hline
+%%SUMMARY_ROWS%%
+      \noalign{{\color{navy}\hrule height 1.1pt}}
+      \rowcolor{netbg}
+      {\fontsize{11}{14}\selectfont\bfseries\color{navy}\ar{%%NET%%}} & &
+      {\fontsize{11}{14}\selectfont\bfseries\color{navy}\ar{الصافي للدفع}} \\
+    \end{tabular}};
+  \draw[navy, line width=0.75pt, rounded corners=4pt] (sum.south west) rectangle (sum.north east);
+\end{tikzpicture}
 
-\vspace{2cm}
-\noindent\textcolor{gray}{\small Ce document est g\'en\'er\'e automatiquement \`a partir du fichier de pointage.}
+\ifhasdaily
+\vspace{14pt}
+{\raggedleft\color{navy}\fontsize{11.5}{14}\selectfont\bfseries\ar{التفصيل اليومي}\par}
+\vspace{4pt}
+
+% ---------- daily detail ----------
+{\fontsize{8}{10}\selectfont
+\setlength{\tabcolsep}{4pt}%
+\arrayrulecolor{line}%
+\setlength{\LTpre}{0pt}\setlength{\LTpost}{0pt}%
+\setpad{12pt}{4.5pt}%
+\begin{longtable}{C{0.14\linewidth-8pt}C{0.18\linewidth-8pt}C{0.16\linewidth-8pt}C{0.16\linewidth-8pt}C{0.16\linewidth-8pt}C{0.2\linewidth-8pt}}
+  \rowcolor{greyhead}
+  {\bfseries\color{navy}\ar{تصحيح}} & {\bfseries\color{navy}\ar{النوع}} & {\bfseries\color{navy}\ar{المجموع}} &
+  {\bfseries\color{navy}\ar{الخروج}} & {\bfseries\color{navy}\ar{الدخول}} & {\bfseries\color{navy}\ar{التاريخ}} \\
+  \hline
+  \endhead
+%%DAILY_ROWS%%
+\end{longtable}}
+\fi
 
 \end{document}
