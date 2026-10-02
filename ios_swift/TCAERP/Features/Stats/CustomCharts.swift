@@ -96,6 +96,7 @@ enum ChartCatalog {
         case "doc_type": return key == "recu" ? tr("invoicesTab.recu") : key == "facture" ? tr("invoicesTab.facture") : key
         case "kind": return key == "gathering" ? tr("treasuryTab.gathering") : key == "spending" ? tr("treasuryTab.spending") : key
         case "status": return lookup("status", key)
+        case "month", "flight_month", "period_label": return Fmt.shortMonth(key)
         default: return key
         }
     }

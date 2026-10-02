@@ -165,6 +165,36 @@ enum ClientFields {
     static let all = passport + business + choices
 }
 
+extension String {
+    /// "passport_received" → "passportReceived". The API client's snake-case decoding
+    /// rewrites dictionary keys too, so lookups in decoded dictionaries use this form.
+    var camelFromSnake: String {
+        let parts = split(separator: "_", omittingEmptySubsequences: true)
+        guard let first = parts.first else { return self }
+        return String(first) + parts.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
+    }
+}
+
+/// /clients/summary: counts computed by the server, so the dashboard and Stats
+/// don't download every client.
+struct ClientSummary: Decodable {
+    struct Month: Decodable, Hashable {
+        let month: String
+        let count: Int
+    }
+
+    var total = 0
+    var byStatus: [String: Int] = [:]
+    var byCountry: [String: Int] = [:]
+    var byMonth: [Month] = []
+    var alerts = 0
+
+    init() {}
+
+    func count(_ status: VisaStatus) -> Int { byStatus[status.rawValue.camelFromSnake] ?? 0 }
+    func count(_ country: Country) -> Int { byCountry[country.rawValue] ?? 0 }
+}
+
 struct ClientSaveResponse: Decodable {
     let client: Client
 }
@@ -190,7 +220,18 @@ struct ExtractResult: Decodable {
     var dateOfIssue: String?
     var dateOfExpiry: String?
     var issuedBy: String?
-    var userPhoto: String?
+    var _meta: Meta?
+
+    /// How the passport was read: `confidence[field]` is "verified" (the passport's
+    /// check digit confirms it), "likely" or "review".
+    struct Meta: Decodable {
+        let engine: String
+        let ms: Int
+        let confidence: [String: String]
+
+        /// Confidence for a field named as in the API ("date_of_birth").
+        func status(for field: String) -> String? { confidence[field.camelFromSnake] }
+    }
 
     var fields: [String: String] {
         [
@@ -289,6 +330,7 @@ struct InvoiceItem: Codable, Hashable {
 
 struct Invoice: Codable, Identifiable, Hashable {
     let id: Int
+    var clientId: Int? = nil
     let country: String
     let docType: String
     let clientName: String
@@ -303,6 +345,20 @@ struct Invoice: Codable, Identifiable, Hashable {
     let items: [InvoiceItem]
     let number: String
     let pdfUrl: String
+}
+
+struct InvoiceUpdate: Encodable {
+    let clientId: Int?
+    let clientName: String
+    let clientPassport: String?
+    let clientMf: String?
+    let companyName: String?
+    let serviceType: String?
+    let issueDate: String
+    let tvaRate: Double
+    let timbre: Double
+    let amountPaid: Double
+    let items: [InvoiceItem]
 }
 
 struct NewInvoice: Encodable {

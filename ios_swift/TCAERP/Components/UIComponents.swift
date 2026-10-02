@@ -117,14 +117,16 @@ struct StatusBadge: View {
     }
 
     var body: some View {
+        // Long statuses ("Client notified that passport is ready") wrap onto a
+        // second line instead of squeezing whatever sits next to the badge.
         Text(text)
             .font(.caption.weight(.semibold))
+            .multilineTextAlignment(.center)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .foregroundStyle(color)
-            .background(color.opacity(0.14), in: Capsule())
-            .lineLimit(1)
-            .fixedSize()
+            .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -175,6 +177,27 @@ struct PrimaryButton: View {
 
 // MARK: Labeled form rows
 
+/// ✓ when the passport's own check digit confirms a value, ⚠ when it needs a look
+/// (shown after reading a passport); nothing for the rest.
+struct ReadMark: View {
+    let status: String?
+
+    var body: some View {
+        switch status {
+        case "verified":
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(Color.success)
+                .accessibilityLabel(tr("clients.markVerified"))
+        case "review":
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.warning)
+                .accessibilityLabel(tr("clients.markReview"))
+        default:
+            EmptyView()
+        }
+    }
+}
+
 /// A text field with a small caption above, matching the web's Field label.
 struct LabeledField: View {
     let label: String
@@ -182,10 +205,16 @@ struct LabeledField: View {
     var placeholder: String = ""
     var keyboard: UIKeyboardType = .default
     var autocapitalize: TextInputAutocapitalization = .sentences
+    var status: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label.capitalizedFirst).font(.caption).foregroundStyle(Color.muted)
+            HStack(spacing: 4) {
+                Text(label.capitalizedFirst)
+                ReadMark(status: status)
+            }
+            .font(.caption)
+            .foregroundStyle(Color.muted)
             TextField(placeholder.isEmpty ? label.capitalizedFirst : placeholder, text: $text)
                 .keyboardType(keyboard)
                 .textInputAutocapitalization(autocapitalize)
@@ -212,17 +241,22 @@ struct DateField: View {
 struct OptionalDateField: View {
     let label: String
     @Binding var text: String
+    var status: String? = nil
 
     var body: some View {
         HStack {
             if text.isEmpty {
-                Text(label.capitalizedFirst)
+                HStack(spacing: 4) {
+                    Text(label.capitalizedFirst)
+                    ReadMark(status: status)
+                }
                 Spacer()
                 Button(tr("common.add")) { text = Fmt.today() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             } else {
                 DateField(label: label, text: $text)
+                ReadMark(status: status)
                 Button {
                     text = ""
                 } label: {

@@ -95,11 +95,11 @@ def _render_recu(invoice, work_dir: Path) -> str:
     status = "تم الدفع بالكامل" if amount_left <= 0 else "دفعة جزئية"
 
     replacements = {
-        "%%RECEIPT_NO%%": invoice.number,
+        "%%RECEIPT_NO%%": _latex_escape(invoice.number),
         "%%RECEIPT_DATE%%": invoice.issue_date.isoformat(),
-        "%%CLIENT_NAME%%": invoice.client_name,
-        "%%CLIENT_PASSPORT%%": invoice.client_passport or "-",
-        "%%SERVICE_TYPE%%": invoice.service_type or "-",
+        "%%CLIENT_NAME%%": _latex_escape(invoice.client_name),
+        "%%CLIENT_PASSPORT%%": _latex_escape(invoice.client_passport or "-"),
+        "%%SERVICE_TYPE%%": _latex_escape(invoice.service_type or "-"),
         "%%AMOUNT_DUE%%": f"{total_due:.3f}",
         "%%AMOUNT_PAID%%": f"{invoice.amount_paid:.3f}",
         "%%AMOUNT_LEFT%%": f"{amount_left:.3f}",

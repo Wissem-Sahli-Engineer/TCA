@@ -47,13 +47,14 @@ export function AccountingPage({ defaultCountry = "tunisia" }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/invoices?country=${country}`).then((r) => (r.ok ? r.json() : [])),
+      // One row is enough: the total is in the X-Total-Count header.
+      fetch(`/api/invoices?country=${country}&limit=1`).then((r) => (r.ok ? Number(r.headers.get("X-Total-Count") || 0) : 0)),
       fetch(`/api/treasury?country=${country}`).then((r) => (r.ok ? r.json() : null)),
       fetch(`/api/banking/accounts?country=${country}`).then((r) => (r.ok ? r.json() : [])),
     ])
       .then(([invoices, treasury, accounts]) => {
         setSummary({
-          invoiceCount: Array.isArray(invoices) ? invoices.length : 0,
+          invoiceCount: invoices,
           monthSpending: treasury?.current_month?.spending || 0,
           bankTotal: Array.isArray(accounts) ? accounts.reduce((acc, a) => acc + a.balance, 0) : 0,
         });

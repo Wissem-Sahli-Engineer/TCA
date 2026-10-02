@@ -18,6 +18,8 @@ struct ClientFormView: View {
     @State private var photo: UIImage?
     @State private var otherFiles: [UploadFile] = []
     @State private var extracting = false
+    /// Per passport field after reading: "verified", "likely" or "review".
+    @State private var confidence: [String: String] = [:]
     @State private var saving = false
     @State private var showImporter = false
 
@@ -43,7 +45,7 @@ struct ClientFormView: View {
                         Task { await extract() }
                     } label: {
                         HStack {
-                            Label(tr("clients.extractViaAi"), systemImage: "sparkles")
+                            Label(tr("clients.extractViaAi"), systemImage: "text.viewfinder")
                             if extracting { Spacer(); ProgressView() }
                         }
                     }
@@ -201,8 +203,9 @@ struct ClientFormView: View {
         }
     }
 
+    /// Editing a field means the user has checked it: its mark goes away.
     private func binding(_ key: String) -> Binding<String> {
-        Binding(get: { values[key] ?? "" }, set: { values[key] = $0 })
+        Binding(get: { values[key] ?? "" }, set: { values[key] = $0; confidence[key] = nil })
     }
 
     /// Yes/no field, sent to the API as "true"/"false".
@@ -214,20 +217,26 @@ struct ClientFormView: View {
     private func field(_ key: String) -> some View {
         let label = tr("clients.fields.\(key)")
         if key == "sex" {
-            Picker(label.capitalizedFirst, selection: binding(key)) {
+            Picker(selection: binding(key)) {
                 Text(tr("clients.selectValue")).tag("")
                 Text("M").tag("M")
                 Text("F").tag("F")
                 Text("X").tag("X")
+            } label: {
+                HStack(spacing: 4) {
+                    Text(label.capitalizedFirst)
+                    ReadMark(status: confidence[key])
+                }
             }
         } else if key.contains("date") {
-            OptionalDateField(label: label, text: binding(key))
+            OptionalDateField(label: label, text: binding(key), status: confidence[key])
         } else {
             LabeledField(
                 label: label,
                 text: binding(key),
                 keyboard: key == "prix_dossier" ? .decimalPad : key == "email" ? .emailAddress : key == "phone" ? .phonePad : .default,
-                autocapitalize: ["email", "passport_number"].contains(key) ? .never : (key == "currency" ? .characters : .words)
+                autocapitalize: ["email", "passport_number"].contains(key) ? .never : (key == "currency" ? .characters : .words),
+                status: confidence[key]
             )
         }
     }
@@ -242,12 +251,16 @@ struct ClientFormView: View {
         do {
             let result: ExtractResult = try await API.shared.upload("/extract", field: "file", files: [file])
             for (key, value) in result.fields { values[key] = value }
-            // The extractor also crops the passport portrait; use it when no
-            // photo was picked by hand.
-            if photo == nil, let dataURL = result.userPhoto, !dataURL.isEmpty {
-                photo = UIImage(dataURL: dataURL)
+            // A field the reading left empty is also something to fill in.
+            confidence = Dictionary(uniqueKeysWithValues: ClientFields.passport.map { key in
+                (key, (result.fields[key] ?? "").isEmpty ? "review" : (result._meta?.status(for: key) ?? "likely"))
+            })
+            if result._meta?.engine == "ai" {
+                toast(tr("clients.extractedAi"), error: true)
+            } else {
+                let seconds = String(format: "%.1f", Double(result._meta?.ms ?? 0) / 1000)
+                toast(tr("clients.extractedOcr").replacingOccurrences(of: "{s}", with: seconds))
             }
-            toast(tr("clients.extracted"))
         } catch {
             toast("\(tr("clients.extractFailed")) — \(error.localizedDescription)", error: true)
         }

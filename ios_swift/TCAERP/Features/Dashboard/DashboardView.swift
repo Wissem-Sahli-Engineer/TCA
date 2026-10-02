@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Overview (src/features/dashboard/DashboardPage.jsx).
 struct DashboardView: View {
-    @State private var clients: [Client] = []
+    @State private var summary = ClientSummary()
     @State private var treasuryMonthly: [TreasuryMonth] = []
     @State private var monthNet: Double = 0
     @State private var bankTotal: Double = 0
@@ -11,7 +11,7 @@ struct DashboardView: View {
 
     private var statusCounts: [(status: VisaStatus, count: Int)] {
         VisaStatus.allCases.map { status in
-            (status, clients.filter { $0.visa == status }.count)
+            (status, summary.count(status))
         }
     }
 
@@ -43,9 +43,9 @@ struct DashboardView: View {
                 .background(Color.cardInk, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                    StatTile(label: tr("dashboard.totalClients"), value: "\(clients.count)",
+                    StatTile(label: tr("dashboard.totalClients"), value: "\(summary.total)",
                              note: tr("dashboard.inDatabase"), accent: .accentPurple)
-                    StatTile(label: tr("dashboard.inProgress"), value: "\(clients.filter { $0.visa.isInProgress }.count)",
+                    StatTile(label: tr("dashboard.inProgress"), value: "\(statusCounts.filter { $0.status.isInProgress }.reduce(0) { $0 + $1.count })",
                              note: tr("dashboard.awaitingDecision"), accent: .accentOrange)
                     StatTile(label: tr("dashboard.missingDocs"), value: "\(count(.missingDocuments))",
                              note: tr("dashboard.needFollowUp"), accent: .accentRed)
@@ -71,7 +71,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(tr("dashboard.byVisaStatus")).font(.headline)
                     VisaStatusChart(counts: statusCounts)
-                    Text("\(clients.filter(\.isAlert).count) \(tr("dashboard.needAlertFollowUp"))")
+                    Text("\(summary.alerts) \(tr("dashboard.needAlertFollowUp"))")
                         .font(.footnote)
                         .foregroundStyle(Color.muted)
                 }
@@ -88,7 +88,7 @@ struct DashboardView: View {
     }
 
     private func load() async {
-        if let data: [Client] = try? await API.shared.get("/clients") { clients = data }
+        if let data: ClientSummary = try? await API.shared.get("/clients/summary") { summary = data }
 
         // Treasury/banking/invoices are admin-only; agents just see zeros.
         var merged: [String: TreasuryMonth] = [:]
@@ -109,8 +109,9 @@ struct DashboardView: View {
             if let accounts: [BankAccount] = try? await API.shared.get("/banking/accounts", query: query) {
                 bank += accounts.reduce(0) { $0 + $1.balance }
             }
-            if let list: [Invoice] = try? await API.shared.get("/invoices", query: query) {
-                invoices += list.count
+            // Only the count is needed: ask for one row and read the total.
+            if let page: (items: [Invoice], total: Int) = try? await API.shared.getPage("/invoices", query: query, limit: 1, offset: 0) {
+                invoices += page.total
             }
         }
         monthNet = net
@@ -126,15 +127,15 @@ struct TreasuryAreaChart: View {
     var body: some View {
         Chart {
             ForEach(data) { row in
-                AreaMark(x: .value("Month", row.month), y: .value(tr("dashboard.gathering"), row.gathering))
+                AreaMark(x: .value("Month", Fmt.shortMonth(row.month)), y: .value(tr("dashboard.gathering"), row.gathering))
                     .foregroundStyle(Color.accentPurple.opacity(0.18))
                     .interpolationMethod(.monotone)
-                LineMark(x: .value("Month", row.month), y: .value(tr("dashboard.gathering"), row.gathering),
+                LineMark(x: .value("Month", Fmt.shortMonth(row.month)), y: .value(tr("dashboard.gathering"), row.gathering),
                          series: .value("Series", "gathering"))
                     .foregroundStyle(Color.accentPurple)
                     .lineStyle(StrokeStyle(lineWidth: 2))
                     .interpolationMethod(.monotone)
-                LineMark(x: .value("Month", row.month), y: .value(tr("dashboard.spending"), row.spending),
+                LineMark(x: .value("Month", Fmt.shortMonth(row.month)), y: .value(tr("dashboard.spending"), row.spending),
                          series: .value("Series", "spending"))
                     .foregroundStyle(Color.accentOrange)
                     .lineStyle(StrokeStyle(lineWidth: 2))

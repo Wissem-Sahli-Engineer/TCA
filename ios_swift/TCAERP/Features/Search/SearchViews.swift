@@ -8,8 +8,6 @@ struct SearchView: View {
     @State private var query = ""
     @State private var clients: [Client] = []
     @State private var invoices: [Invoice] = []
-    @State private var allClients: [Client]?
-    @State private var allInvoices: [Invoice]?
 
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
 
@@ -71,22 +69,19 @@ struct SearchView: View {
     }
 
     private func search() async {
-        if allClients == nil { allClients = try? await API.shared.get("/clients") }
-        if allInvoices == nil {
-            var list: [Invoice] = []
-            if auth.isAdmin {
-                for country in Country.allCases {
-                    list += (try? await API.shared.get("/invoices", query: ["country": country.rawValue])) ?? []
-                }
+        let term = q.trimmingCharacters(in: .whitespaces)
+        let page: (items: [Client], total: Int)? = try? await API.shared.getPage("/clients", query: ["q": term], limit: 8, offset: 0)
+        guard !Task.isCancelled else { return }
+        clients = page?.items ?? []
+        var found: [Invoice] = []
+        if auth.isAdmin {
+            for country in Country.allCases {
+                let list: (items: [Invoice], total: Int)? = try? await API.shared.getPage("/invoices", query: ["country": country.rawValue, "q": term], limit: 8, offset: 0)
+                found += list?.items ?? []
             }
-            allInvoices = list
         }
-        clients = Array((allClients ?? []).filter {
-            $0.fullName.lowercased().contains(q) || $0.passportNumber.lowercased().contains(q)
-        }.prefix(8))
-        invoices = Array((allInvoices ?? []).filter {
-            $0.number.lowercased().contains(q) || $0.clientName.lowercased().contains(q)
-        }.prefix(8))
+        guard !Task.isCancelled else { return }
+        invoices = Array(found.prefix(8))
     }
 }
 

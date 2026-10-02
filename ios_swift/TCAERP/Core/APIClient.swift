@@ -77,6 +77,18 @@ final class API {
         return try decode(data)
     }
 
+    /// One page of a server-paged list (`limit` / `offset`), plus the total number of
+    /// matches, which the backend sends in the X-Total-Count header.
+    func getPage<T: Decodable>(_ path: String, query: [String: String], limit: Int, offset: Int) async throws -> (items: [T], total: Int) {
+        var query = query
+        query["limit"] = String(limit)
+        query["offset"] = String(offset)
+        let (data, response) = try await performFull(method: "GET", path: path, query: query, body: nil, contentType: nil)
+        let items: [T] = try decode(data)
+        let total = Int(response.value(forHTTPHeaderField: "X-Total-Count") ?? "") ?? items.count
+        return (items, total)
+    }
+
     func post<T: Decodable>(_ path: String, body: some Encodable) async throws -> T {
         let data = try await perform(method: "POST", path: path, body: try encoder.encode(body), contentType: "application/json")
         return try decode(data)
@@ -160,6 +172,16 @@ final class API {
         body: Data?,
         contentType: String?
     ) async throws -> Data {
+        try await performFull(method: method, path: path, query: query, body: body, contentType: contentType).0
+    }
+
+    private func performFull(
+        method: String,
+        path: String,
+        query: [String: String] = [:],
+        body: Data?,
+        contentType: String?
+    ) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.httpBody = body
@@ -174,14 +196,15 @@ final class API {
             throw APIError(status: 0, message: "\(tr("settings.connectionFailed")): \(baseURL) — \(error.localizedDescription)")
         }
 
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else {
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        guard let http, (200..<300).contains(status) else {
             if status == 401, token != nil, !path.hasPrefix("/auth/login") {
                 onUnauthorized?()
             }
             throw APIError(status: status, message: Self.detail(from: data) ?? "Request failed (\(status))")
         }
-        return data
+        return (data, http)
     }
 
     private func decode<T: Decodable>(_ data: Data) throws -> T {

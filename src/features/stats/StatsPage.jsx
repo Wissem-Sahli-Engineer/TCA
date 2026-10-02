@@ -18,7 +18,7 @@ import { PageTitle } from "../../components/ui/Card";
 import { BoxSelect } from "../../components/ui/Input";
 import { useScrollReveal } from "../../lib/useScrollReveal";
 import { useI18n } from "../../store/i18n";
-import { VISA_STATUSES, VISA_TYPES, clientCountry, optionLabel, visaStatusOf } from "../clients/options";
+import { VISA_STATUSES, VISA_TYPES, optionLabel } from "../clients/options";
 import { CustomChartsSection } from "./CustomChartsSection";
 
 // Recharts anchors axis labels for left-to-right text; under dir="rtl" the
@@ -36,7 +36,8 @@ export function StatsPage() {
   const t = useI18n((s) => s.t);
   // Charts are mirrored in Arabic; their text stays LTR-anchored (see CHART_STYLE).
   const isRtl = useI18n((s) => s.isRtl);
-  const [clients, setClients] = useState([]);
+  // Client counts come from the server, already filtered (/clients/summary).
+  const [summary, setSummary] = useState({ total: 0, by_status: {}, by_country: {}, by_month: [] });
   const [country, setCountry] = useState("all");
   const [visaType, setVisaType] = useState("all");
 
@@ -52,50 +53,56 @@ export function StatsPage() {
         .then((r) => (r.ok ? r.json() : fallback))
         .catch(() => fallback);
 
-    json("/api/clients", []).then((data) => setClients(Array.isArray(data) ? data : []));
     json("/api/payroll/payslips", []).then((data) => setPayslips(Array.isArray(data) ? data : []));
 
     Promise.all(
       COUNTRIES.map(async (c) => [
         c,
         await json(`/api/treasury?country=${c}`, null),
-        await json(`/api/invoices?country=${c}`, []),
+        // Factures vs reçus counted by the server rather than downloading every invoice.
+        await fetch("/api/stats/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "invoices", group_by: "doc_type", country: c }),
+        })
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []),
         await json(`/api/banking/accounts?country=${c}`, []),
       ])
     ).then((results) => {
       setTreasury(Object.fromEntries(results.map(([c, tr]) => [c, tr?.history || []])));
-      setInvoices(Object.fromEntries(results.map(([c, , inv]) => [c, inv])));
+      setInvoices(Object.fromEntries(results.map(([c, , rows]) => [c, rows])));
       setAccounts(Object.fromEntries(results.map(([c, , , acc]) => [c, acc])));
     });
   }, []);
 
+  useEffect(() => {
+    const query = new URLSearchParams();
+    if (country !== "all") query.set("country", country);
+    if (visaType !== "all") query.set("visa_type", visaType);
+    let stale = false;
+    fetch(`/api/clients/summary?${query}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && !stale && setSummary(data))
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [country, visaType]);
+
   const selectedCountries = country === "all" ? COUNTRIES : [country];
 
-  const filtered = clients.filter(
-    (c) => (country === "all" || clientCountry(c) === country) && (visaType === "all" || c.visa_type === visaType)
-  );
-
-  const series = useMemo(() => {
-    const byMonth = {};
-    filtered.forEach((c) => {
-      const month = (c.created_at || "").slice(0, 7);
-      if (!month) return;
-      byMonth[month] = (byMonth[month] || 0) + 1;
-    });
-    return Object.keys(byMonth)
-      .sort()
-      .map((month) => ({ month, count: byMonth[month] }));
-  }, [filtered]);
+  const series = summary.by_month;
 
   const statusCounts = VISA_STATUSES.map((s) => ({
     ...s,
     name: optionLabel(t, "visa", s.id),
-    value: filtered.filter((c) => visaStatusOf(c) === s.id).length,
+    value: summary.by_status[s.id] || 0,
   }));
 
   const byCountry = COUNTRIES.map((c) => ({
     name: t(`countries.${c}`),
-    value: filtered.filter((cl) => clientCountry(cl) === c).length,
+    value: summary.by_country[c] || 0,
     color: COUNTRY_COLORS[c],
   })).filter((c) => c.value > 0);
 
@@ -113,10 +120,11 @@ export function StatsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treasury, country]);
 
-  const invoiceList = selectedCountries.flatMap((c) => invoices[c] || []);
+  const countDocs = (type) =>
+    selectedCountries.reduce((acc, c) => acc + ((invoices[c] || []).find((r) => r.key === type)?.value || 0), 0);
   const invoicesByType = [
-    { id: "factures", value: invoiceList.filter((i) => i.doc_type === "facture").length, color: "#8B5CF6" },
-    { id: "recus", value: invoiceList.filter((i) => i.doc_type === "recu").length, color: "#F0924B" },
+    { id: "factures", value: countDocs("facture"), color: "#8B5CF6" },
+    { id: "recus", value: countDocs("recu"), color: "#F0924B" },
   ].map((i) => ({ ...i, name: t(`statsPage.${i.id}`) }));
 
   const bankAccounts = selectedCountries.flatMap((c) => accounts[c] || []);
@@ -157,7 +165,7 @@ export function StatsPage() {
             </BoxSelect>
           </div>
           <p style={{ paddingTop: "8px", fontSize: "12.5px", lineHeight: "1.5", color: "var(--color-muted)" }}>
-            {filtered.length} {t("statsPage.clientsMatch")}
+            {summary.total} {t("statsPage.clientsMatch")}
           </p>
         </aside>
 

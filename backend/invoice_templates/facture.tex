@@ -46,17 +46,17 @@
 % =====================================================================
 % ======================  DONNEES DE LA FACTURE  ======================
 % =====================================================================
-\newcommand{\invNum}{2026-001}     % numero de facture
-\newcommand{\invDate}{\today}     % date
-\newcommand{\clientName}{Client Name} % nom du client
-\newcommand{\clientMF}{1234567/A}  % matricule fiscal
-\newcommand{\companyname}{Client Company} % nom entreprise client
-\def\tvaRate{0.19}                  % taux de TVA (0.19 = 19%)
-\def\timbreVal{1}                   % droit de timbre en TND
-\def\montantRegle{1191}             % montant deja paye
+\newcommand{\invNum}{%%INV_NUM%%}     % numero de facture
+\newcommand{\invDate}{%%INV_DATE%%}     % date
+\newcommand{\clientName}{%%CLIENT_NAME%%} % nom du client
+\newcommand{\clientMF}{%%CLIENT_MF%%}  % matricule fiscal
+\newcommand{\companyname}{%%COMPANY_NAME%%} % nom entreprise client
+\def\tvaRate{%%TVA_RATE%%}                  % taux de TVA (0.19 = 19%)
+\def\timbreVal{%%TIMBRE%%}                   % droit de timbre en TND
+\def\montantRegle{%%MONTANT_REGLE%%}             % montant deja paye
 
 % --- Lignes de la facture : \article{designation}{qte}{prix unitaire} ---
-\article{VISA CHINE}{2}{500}
+%%ARTICLES%%
 % \article{FRAIS DE DOSSIER}{1}{150}
 % \article{TRADUCTION ASSERMENTEE}{3}{45.5}
 % =====================================================================

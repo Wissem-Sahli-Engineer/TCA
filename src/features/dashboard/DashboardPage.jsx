@@ -14,7 +14,7 @@ import {
 import { PageTitle } from "../../components/ui/Card";
 import { useScrollReveal } from "../../lib/useScrollReveal";
 import { useI18n } from "../../store/i18n";
-import { MISSING_DOCUMENTS, VISA_STATUSES, isAlert, isInProgress, optionLabel, visaStatusOf } from "../clients/options";
+import { MISSING_DOCUMENTS, VISA_STATUSES, isInProgress, optionLabel } from "../clients/options";
 
 // Recharts anchors axis labels for left-to-right text; under dir="rtl" the
 // labels slide onto the bars. Keep the chart LTR and mirror it with
@@ -54,17 +54,18 @@ export function DashboardPage() {
   // Charts are mirrored in Arabic; their text stays LTR-anchored (see CHART_STYLE).
   const isRtl = useI18n((s) => s.isRtl);
 
-  const [clients, setClients] = useState([]);
+  // Counts come from the server (/clients/summary) — no client list is downloaded.
+  const [summary, setSummary] = useState({ total: 0, by_status: {}, alerts: 0 });
   const [treasuryMonthly, setTreasuryMonthly] = useState([]);
   const [monthNet, setMonthNet] = useState(0);
   const [bankTotal, setBankTotal] = useState(0);
   const [invoiceCount, setInvoiceCount] = useState(0);
 
   useEffect(() => {
-    fetch("/api/clients")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setClients(Array.isArray(data) ? data : []))
-      .catch(() => setClients([]));
+    fetch("/api/clients/summary")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setSummary(data))
+      .catch(() => {});
 
     Promise.all(COUNTRIES.map((c) => fetch(`/api/treasury?country=${c}`).then((r) => (r.ok ? r.json() : null))))
       .then((results) => {
@@ -89,22 +90,30 @@ export function DashboardPage() {
       .then((results) => setBankTotal(results.flat().reduce((acc, a) => acc + a.balance, 0)))
       .catch(() => {});
 
-    Promise.all(COUNTRIES.map((c) => fetch(`/api/invoices?country=${c}`).then((r) => (r.ok ? r.json() : []))))
-      .then((results) => setInvoiceCount(results.flat().length))
+    // One row is enough: the total is in the X-Total-Count header.
+    Promise.all(
+      COUNTRIES.map((c) =>
+        fetch(`/api/invoices?country=${c}&limit=1`).then((r) => (r.ok ? Number(r.headers.get("X-Total-Count") || 0) : 0))
+      )
+    )
+      .then((counts) => setInvoiceCount(counts.reduce((a, b) => a + b, 0)))
       .catch(() => {});
   }, []);
 
   const statusCounts = VISA_STATUSES.map((s) => ({
     ...s,
     name: optionLabel(t, "visa", s.id),
-    value: clients.filter((c) => visaStatusOf(c) === s.id).length,
+    value: summary.by_status[s.id] || 0,
   }));
-  const missingCount = clients.filter((c) => visaStatusOf(c) === MISSING_DOCUMENTS).length;
-  const alertCount = clients.filter(isAlert).length;
+  const missingCount = summary.by_status[MISSING_DOCUMENTS] || 0;
+  const alertCount = summary.alerts;
+  const inProgress = Object.entries(summary.by_status)
+    .filter(([status]) => isInProgress(status))
+    .reduce((acc, [, n]) => acc + n, 0);
 
   const stats = [
-    { label: t("dashboard.totalClients"), value: clients.length, note: t("dashboard.inDatabase"), accent: "#8B5CF6" },
-    { label: t("dashboard.inProgress"), value: clients.filter((c) => isInProgress(visaStatusOf(c))).length, note: t("dashboard.awaitingDecision"), accent: "#F0924B" },
+    { label: t("dashboard.totalClients"), value: summary.total, note: t("dashboard.inDatabase"), accent: "#8B5CF6" },
+    { label: t("dashboard.inProgress"), value: inProgress, note: t("dashboard.awaitingDecision"), accent: "#F0924B" },
     { label: t("dashboard.missingDocs"), value: missingCount, note: t("dashboard.needFollowUp"), accent: "#ef4444" },
     { label: t("dashboard.invoicesReceipts"), value: invoiceCount, note: t("dashboard.issuedToDate"), accent: "#22c55e" },
   ];

@@ -25,8 +25,8 @@ final class AlertsStore: ObservableObject {
     }
 
     func load(isAdmin: Bool) async {
-        if let clients: [Client] = try? await API.shared.get("/clients") {
-            alertClients = clients.filter(\.isAlert)
+        if let page: (items: [Client], total: Int) = try? await API.shared.getPage("/clients", query: ["tab": "alert"], limit: 50, offset: 0) {
+            alertClients = page.items
         }
         guard isAdmin else { treasury = []; return }
         var nets: [TreasuryNet] = []

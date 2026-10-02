@@ -75,12 +75,10 @@ struct ClientDetailView: View {
                             .foregroundStyle(Color.danger)
                             .multilineTextAlignment(.center)
                     }
-                    HStack(spacing: 6) {
-                        StatusBadge(visa: client.visa)
-                        if let payment = client.payment { StatusBadge(payment: payment) }
-                        if client.clientCategory != .normal {
-                            StatusBadge(client.clientCategory.label, tone: .brand)
-                        }
+                    // One row when it fits, stacked when a long status wouldn't.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { detailBadges(client) }
+                        VStack(spacing: 6) { detailBadges(client) }
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -152,6 +150,15 @@ struct ClientDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private func detailBadges(_ client: Client) -> some View {
+        StatusBadge(visa: client.visa)
+        if let payment = client.payment { StatusBadge(payment: payment) }
+        if client.clientCategory != .normal {
+            StatusBadge(client.clientCategory.label, tone: .brand)
+        }
+    }
+
     private func fields(_ c: Client) -> [(String, String)] {
         let l = { (key: String) in tr("clients.labels.\(key)") }
         return [
@@ -203,11 +210,9 @@ struct ClientDetailView: View {
     }
 
     private func load() async {
-        // The API has no single-client endpoint; the web does the same lookup.
         do {
-            let all: [Client] = try await API.shared.get("/clients")
-            client = all.first { $0.id == clientID }
-            missing = client == nil
+            client = try await API.shared.get("/clients/\(clientID)")
+            missing = false
         } catch {
             if client == nil { missing = true }
         }

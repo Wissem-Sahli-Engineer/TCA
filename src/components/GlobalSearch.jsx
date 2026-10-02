@@ -24,30 +24,26 @@ export function GlobalSearch() {
       return;
     }
 
-    fetch("/api/clients")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => {
-        const matches = (Array.isArray(data) ? data : []).filter((c) => {
-          const name = `${c.given_name} ${c.surname}`.toLowerCase();
-          return name.includes(q) || (c.passport_number || "").toLowerCase().includes(q);
-        });
-        setClients(matches.slice(0, 6));
-      })
-      .catch(() => setClients([]));
+    // The server does the searching; only a handful of matches are ever downloaded.
+    // Debounced, and a slow answer for an older search can't replace a newer one.
+    let stale = false;
+    const timer = setTimeout(() => {
+      const term = encodeURIComponent(q);
+      fetch(`/api/clients?q=${term}&limit=6`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => !stale && setClients(Array.isArray(data) ? data : []))
+        .catch(() => !stale && setClients([]));
 
-    Promise.all(
-      COUNTRIES.map((c) => fetch(`/api/invoices?country=${c}`).then((r) => (r.ok ? r.json() : [])))
-    )
-      .then((results) => {
-        const matches = results
-          .flat()
-          .filter(
-            (inv) =>
-              inv.number.toLowerCase().includes(q) || inv.client_name.toLowerCase().includes(q)
-          );
-        setInvoices(matches.slice(0, 6));
-      })
-      .catch(() => setInvoices([]));
+      Promise.all(
+        COUNTRIES.map((c) => fetch(`/api/invoices?country=${c}&q=${term}&limit=6`).then((r) => (r.ok ? r.json() : [])))
+      )
+        .then((results) => !stale && setInvoices(results.flat().slice(0, 6)))
+        .catch(() => !stale && setInvoices([]));
+    }, 250);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
   }, [search]);
 
   useEffect(() => {

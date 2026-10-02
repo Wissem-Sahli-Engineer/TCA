@@ -223,6 +223,16 @@ enum Fmt {
 
     static func today() -> String { apiDate.string(from: Date()) }
 
+    /// "2026-09" or "09/2026" → "09/26": short enough that every bar of a
+    /// monthly chart keeps its label on a phone (long ones get cut to "2026…").
+    static func shortMonth(_ text: String) -> String {
+        let parts = text.split(whereSeparator: { $0 == "-" || $0 == "/" }).map(String.init)
+        guard parts.count == 2 else { return text }
+        let (year, month) = parts[0].count == 4 ? (parts[0], parts[1]) : (parts[1], parts[0])
+        guard year.count == 4, month.count == 2 else { return text }
+        return "\(month)/\(year.suffix(2))"
+    }
+
     static func currentPeriodLabel() -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US")

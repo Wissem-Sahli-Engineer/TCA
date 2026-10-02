@@ -5,12 +5,12 @@ import SwiftUI
 /// custom charts (saved on the server, shared with the website).
 struct StatsView: View {
     @EnvironmentObject private var auth: AuthStore
-    @State private var clients: [Client] = []
+    @State private var summary = ClientSummary()
     @State private var country: Country?
     @State private var visaType = "all"
     // Accounting data per country, so switching the filter doesn't refetch.
     @State private var treasury: [Country: [TreasuryMonth]] = [:]
-    @State private var invoices: [Country: [Invoice]] = [:]
+    @State private var invoiceTypes: [Country: [StatsRow]] = [:]
     @State private var accounts: [Country: [BankAccount]] = [:]
     @State private var payslips: [Payslip] = []
     @State private var charts: [StatsChart] = []
@@ -19,28 +19,15 @@ struct StatsView: View {
 
     private var selectedCountries: [Country] { country.map { [$0] } ?? Country.allCases }
 
-    private var filtered: [Client] {
-        clients.filter {
-            (country == nil || $0.countryGroup == country) && (visaType == "all" || $0.visaType == visaType)
-        }
-    }
-
-    private var series: [(month: String, count: Int)] {
-        var byMonth: [String: Int] = [:]
-        for client in filtered {
-            guard let created = client.createdAt, created.count >= 7 else { continue }
-            byMonth[String(created.prefix(7)), default: 0] += 1
-        }
-        return byMonth.keys.sorted().map { ($0, byMonth[$0] ?? 0) }
-    }
+    private var series: [(month: String, count: Int)] { summary.byMonth.map { ($0.month, $0.count) } }
 
     private var statusCounts: [(status: VisaStatus, count: Int)] {
-        VisaStatus.allCases.map { status in (status, filtered.filter { $0.visa == status }.count) }
+        VisaStatus.allCases.map { status in (status, summary.count(status)) }
     }
 
     private var byCountry: [(name: String, value: Double, color: Color)] {
         Country.allCases.map { c in
-            (c.label, Double(filtered.filter { $0.countryGroup == c }.count), c == .tunisia ? Color.accentPurple : Color.accentOrange)
+            (c.label, Double(summary.count(c)), c == .tunisia ? Color.accentPurple : Color.accentOrange)
         }.filter { $0.value > 0 }
     }
 
@@ -57,7 +44,11 @@ struct StatsView: View {
         return Array(merged.values.sorted { $0.month < $1.month }.suffix(6))
     }
 
-    private var invoiceList: [Invoice] { selectedCountries.flatMap { invoices[$0] ?? [] } }
+    private func invoiceCount(_ docType: String) -> Int {
+        selectedCountries.reduce(0) { total, c in
+            total + Int((invoiceTypes[c] ?? []).first { $0.key == docType }?.value ?? 0)
+        }
+    }
     private var bankAccounts: [BankAccount] { selectedCountries.flatMap { accounts[$0] ?? [] } }
 
     private var payrollByPeriod: [(period: String, total: Double)] {
@@ -90,7 +81,7 @@ struct StatsView: View {
                             ForEach(VisaType.allCases) { Text($0.label).tag($0.rawValue) }
                         }
                     }
-                    Text("\(filtered.count) \(tr("statsPage.clientsMatch"))")
+                    Text("\(summary.total) \(tr("statsPage.clientsMatch"))")
                         .font(.footnote)
                         .foregroundStyle(Color.muted)
                 }
@@ -102,10 +93,10 @@ struct StatsView: View {
                         EmptyRow(text: tr("statsPage.noClientData"), systemImage: "chart.line.uptrend.xyaxis")
                     } else {
                         Chart(series, id: \.month) { point in
-                            LineMark(x: .value("Month", point.month), y: .value(tr("statsPage.newClients"), point.count))
+                            LineMark(x: .value("Month", Fmt.shortMonth(point.month)), y: .value(tr("statsPage.newClients"), point.count))
                                 .foregroundStyle(Color.accentPurple)
                                 .interpolationMethod(.monotone)
-                            PointMark(x: .value("Month", point.month), y: .value(tr("statsPage.newClients"), point.count))
+                            PointMark(x: .value("Month", Fmt.shortMonth(point.month)), y: .value(tr("statsPage.newClients"), point.count))
                                 .foregroundStyle(Color.accentPurple)
                         }
                         .frame(height: 220)
@@ -125,8 +116,8 @@ struct StatsView: View {
                 }
 
                 chartCard(tr("statsPage.facturesVsRecus")) {
-                    let factures = invoiceList.filter { $0.docType == "facture" }.count
-                    let recus = invoiceList.filter { $0.docType == "recu" }.count
+                    let factures = invoiceCount("facture")
+                    let recus = invoiceCount("recu")
                     if factures + recus == 0 {
                         EmptyRow(text: tr("statsPage.noInvoicesYet"), systemImage: "chart.pie")
                     } else {
@@ -161,7 +152,7 @@ struct StatsView: View {
                         EmptyRow(text: tr("statsPage.noPayslipsYet"), systemImage: "banknote")
                     } else {
                         Chart(payrollByPeriod, id: \.period) { row in
-                            BarMark(x: .value("Period", row.period), y: .value(tr("payroll.grossTotalCol"), row.total))
+                            BarMark(x: .value("Period", Fmt.shortMonth(row.period)), y: .value(tr("payroll.grossTotalCol"), row.total))
                                 .foregroundStyle(Color.accentNavy)
                                 .cornerRadius(6)
                         }
@@ -184,6 +175,7 @@ struct StatsView: View {
         }
         .refreshable { await load() }
         .task { await load() }
+        .task(id: "\(country?.rawValue ?? "")|\(visaType)") { await loadSummary() }
         .sheet(isPresented: $showBuilder) {
             NavigationStack {
                 ChartBuilderView(isAdmin: auth.isAdmin) { Task { await loadCharts() } }
@@ -245,13 +237,21 @@ struct StatsView: View {
         .card()
     }
 
+    /// Client counts come from the server for the chosen country and visa type.
+    private func loadSummary() async {
+        var query: [String: String] = [:]
+        if let country { query["country"] = country.rawValue }
+        if visaType != "all" { query["visa_type"] = visaType }
+        if let data: ClientSummary = try? await API.shared.get("/clients/summary", query: query) { summary = data }
+    }
+
     private func loadCharts() async {
         charts = (try? await API.shared.get("/stats/charts")) ?? charts
     }
 
     private func load() async {
         await loadCharts()
-        if let data: [Client] = try? await API.shared.get("/clients") { clients = data }
+        await loadSummary()
 
         // Treasury, banking, invoices and payroll are admin-only.
         guard auth.isAdmin else { return }
@@ -259,7 +259,9 @@ struct StatsView: View {
             let query = ["country": c.rawValue]
             if let t: TreasuryResponse = try? await API.shared.get("/treasury", query: query) { treasury[c] = t.history }
             if let list: [BankAccount] = try? await API.shared.get("/banking/accounts", query: query) { accounts[c] = list }
-            if let list: [Invoice] = try? await API.shared.get("/invoices", query: query) { invoices[c] = list }
+            var draft = StatsChartDraft()
+            draft.source = "invoices"; draft.groupBy = "doc_type"; draft.country = c.rawValue
+            if let rows = try? await ChartCatalog.rows(for: draft) { invoiceTypes[c] = rows }
         }
         payslips = (try? await API.shared.get("/payroll/payslips")) ?? payslips
     }
@@ -272,11 +274,11 @@ struct TreasuryBarChart: View {
     var body: some View {
         Chart {
             ForEach(data) { row in
-                BarMark(x: .value("Month", row.month), y: .value("Amount", row.gathering))
+                BarMark(x: .value("Month", Fmt.shortMonth(row.month)), y: .value("Amount", row.gathering))
                     .foregroundStyle(by: .value("Kind", tr("treasuryTab.gathering")))
                     .position(by: .value("Kind", tr("treasuryTab.gathering")))
                     .cornerRadius(4)
-                BarMark(x: .value("Month", row.month), y: .value("Amount", row.spending))
+                BarMark(x: .value("Month", Fmt.shortMonth(row.month)), y: .value("Amount", row.spending))
                     .foregroundStyle(by: .value("Kind", tr("treasuryTab.spending")))
                     .position(by: .value("Kind", tr("treasuryTab.spending")))
                     .cornerRadius(4)

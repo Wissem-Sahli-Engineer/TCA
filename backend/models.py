@@ -250,6 +250,23 @@ class InvoiceCreate(InvoiceBase):
     items: list[InvoiceItem] = []
 
 
+class InvoiceUpdate(SQLModel):
+    """Body of PUT /invoices/{id}. The number, country and document type stay as
+    issued (the number is built from them); everything else can be corrected."""
+
+    client_id: int | None = None
+    client_name: str
+    client_passport: str | None = None
+    client_mf: str | None = None
+    company_name: str | None = None
+    service_type: str | None = None
+    issue_date: date
+    tva_rate: float = 0.19
+    timbre: float = 1
+    amount_paid: float = 0
+    items: list[InvoiceItem] = []
+
+
 class AgencyRequestBase(SQLModel):
     name: str = Field(max_length=150)
     description: str

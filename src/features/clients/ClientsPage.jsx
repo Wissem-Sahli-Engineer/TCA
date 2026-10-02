@@ -1,29 +1,28 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageTitle } from "../../components/ui/Card";
 import { IconPlus } from "../../components/ui/Icons";
 import { Card } from "../../components/ui/nav";
 import Magnet from "../../components/ui/magnet";
+import { useDebounced, usePagedList } from "../../lib/usePagedList";
 import { withToken } from "../../store/auth";
 import { useI18n } from "../../store/i18n";
-import { alertReasons, alertText, isAlert, optionLabel, paymentTone, visaStatusOf, visaTone } from "./options";
+import { alertReasons, alertText, optionLabel, paymentTone, visaStatusOf, visaTone } from "./options";
 
-// "normal" is the "All clients" tab; Fair/Reservation filter by category,
-// Alert by the rules in alertReasons().
-const TAB_FILTERS = {
-  normal: () => true,
-  fair: (c) => c.category === "fair",
-  reservation: (c) => c.category === "reservation",
-  alert: (c) => isAlert(c),
-};
+// The "All clients" tab is id "normal" here; the server calls it "all". Search,
+// tabs (fair / reservation / alert) and paging are all done by the server.
+const SERVER_TAB = { normal: "all", fair: "fair", reservation: "reservation", alert: "alert" };
 
 export function ClientsPage() {
   const navigate = useNavigate();
   const t = useI18n((s) => s.t);
-  const [clients, setClients] = useState([]);
-  const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState("normal");
+  const q = useDebounced(query.trim(), 300);
+  const { items: clients, total, loading, loadingMore, error, hasMore, loadMore } = usePagedList("/api/clients", {
+    q,
+    tab: SERVER_TAB[tab],
+  });
 
   const CLIENTS_TABS = [
     { id: "normal", label: t("clients.tabAll") },
@@ -31,28 +30,6 @@ export function ClientsPage() {
     { id: "reservation", label: t("clients.tabReservation") },
     { id: "alert", label: t("clients.tabAlert") },
   ];
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/clients")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => {
-        if (!cancelled) setClients(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const filtered = clients.filter((c) => {
-    if (!TAB_FILTERS[tab](c)) return false;
-    const q = query.toLowerCase();
-    const name = `${c.given_name} ${c.surname}`.toLowerCase();
-    return name.includes(q) || (c.passport_number || "").toLowerCase().includes(q) || (c.phone || "").includes(q);
-  });
 
   return (
     <div className="page-container-max">
@@ -102,14 +79,14 @@ export function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {clients.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-muted)" }}>
-                    {error ? "Could not reach the server." : t("clients.noMatches")}
+                    {loading ? t("common.loading") : error ? t("clients.serverError") : t("clients.noMatches")}
                   </td>
                 </tr>
               ) : (
-                filtered.map((c) => (
+                clients.map((c) => (
                   <tr
                     key={c.id}
                     onClick={() => navigate(`/clients/${c.id}`)}
@@ -159,6 +136,19 @@ export function ClientsPage() {
           </table>
         </div>
       </div>
+
+      {total > 0 ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", marginTop: "16px" }}>
+          <span style={{ fontSize: "13px", color: "var(--color-muted)" }}>
+            {t("clients.showing").replace("{n}", clients.length).replace("{total}", total)}
+          </span>
+          {hasMore ? (
+            <button type="button" className="btn btn-ghost" style={{ width: "auto", padding: "8px 18px" }} onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? t("common.loading") : t("clients.loadMore")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

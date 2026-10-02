@@ -1,7 +1,8 @@
-from fastapi import Depends, FastAPI, Request, UploadFile, File, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -10,6 +11,8 @@ import json
 import os
 import re
 import requests
+import threading
+import time
 import traceback
 from datetime import date, datetime, timezone
 
@@ -27,6 +30,7 @@ from backend.models import (
     EmployeeRequestCreate,
     Invoice,
     InvoiceCreate,
+    InvoiceUpdate,
     Payslip,
     PayslipCreate,
     StatsChart,
@@ -39,6 +43,8 @@ from backend.models import (
 from backend.photos import UPLOADS_DIR, delete_photo, save_client_file, save_client_photo
 from backend.invoices import generate_invoice_pdf
 from backend.payroll import DEFAULT_COMPANY, compute_payslip, generate_payslip_pdf, legacy_details, parse_pointage
+from backend import passport_ocr
+from backend.client_filters import COUNTRIES, TABS, alert_condition, country_condition, like_pattern, search_conditions, tab_condition, visa_status
 from backend.stats import CHART_TYPES, normalize_query, run_query
 from backend.auth import (
     create_access_token,
@@ -54,12 +60,19 @@ from backend.auth import (
 
 app = FastAPI()
 
+
+@app.on_event("startup")
+def _warm_up_ocr():
+    # Load the OCR models in the background so the first passport isn't slower than the rest.
+    threading.Thread(target=passport_ocr.warm_up, daemon=True).start()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
 )
 
 # Paths that don't require a logged-in session.
@@ -142,10 +155,69 @@ def client_out(client: Client, passport_image: str = "") -> dict:
 
 
 @app.get("/clients")
-def get_clients(session: Session = Depends(get_session)):
-    clients = session.exec(select(Client).order_by(Client.id)).all()
-    passports = passport_images(session)
+def get_clients(
+    response: Response,
+    q: str | None = None,
+    tab: str = "all",
+    status: str | None = None,
+    limit: int | None = Query(None, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+):
+    """Clients, optionally searched (`q`: every word must match name, passport, phone
+    or email), narrowed to a tab (all | fair | reservation | alert) and/or one visa
+    `status`, and paged
+    (`limit` / `offset`). Without `limit` everything is returned, as before.
+    The number of matches, ignoring paging, is in the X-Total-Count header."""
+    if tab not in TABS:
+        raise HTTPException(status_code=422, detail=f"tab must be one of {', '.join(TABS)}")
+    conditions = [*search_conditions(q), *tab_condition(tab)]
+    if status:
+        conditions.append(visa_status() == status)
+    total = session.exec(select(func.count()).select_from(Client).where(*conditions)).one()
+    stmt = select(Client).where(*conditions).order_by(Client.id).offset(offset)
+    if limit:
+        stmt = stmt.limit(limit)
+    clients = session.exec(stmt).all()
+    passports = passport_images(session, [c.id for c in clients])
+    response.headers["X-Total-Count"] = str(total)
     return [client_out(c, passports.get(c.id, "")) for c in clients]
+
+
+@app.get("/clients/summary")
+def clients_summary(country: str | None = None, visa_type: str | None = None, session: Session = Depends(get_session)):
+    """Counts for the dashboard and Stats page, computed in the database instead of
+    downloading every client: total, by visa status, by country, new per month, alerts."""
+    base = [*country_condition(country)]
+    if visa_type:
+        base.append(Client.visa_type == visa_type)
+
+    def count(*extra):
+        return session.exec(select(func.count()).select_from(Client).where(*base, *extra)).one()
+
+    status = visa_status()
+    by_status = {k: n for k, n in session.exec(select(status, func.count()).where(*base).group_by(status)).all()}
+    month = func.to_char(Client.created_at, "YYYY-MM")
+    by_month = [
+        {"month": m, "count": n}
+        for m, n in session.exec(select(month, func.count()).where(*base).group_by(month).order_by(month)).all()
+        if m
+    ]
+    return {
+        "total": count(),
+        "by_status": by_status,
+        "by_country": {c: count(*country_condition(c)) for c in COUNTRIES},
+        "by_month": by_month,
+        "alerts": count(alert_condition()),
+    }
+
+
+@app.get("/clients/{client_id}")
+def get_client(client_id: int, session: Session = Depends(get_session)):
+    client = session.get(Client, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client_out(client, passport_images(session, [client_id]).get(client_id, ""))
 
 
 @app.get("/clients/{client_id}/photo")
@@ -532,34 +604,14 @@ async def chat(payload: dict):
     return {"reply": reply}
 
 
-@app.post("/extract")
-async def extract_passport(file: UploadFile = File(...)):
+def _extract_with_llm(image_bytes: bytes, content_type: str) -> dict:
+    """The slow path (20-40 s): ask the local vision model to read the passport.
+    Only used when the machine-readable lines can't be found (see passport_ocr.py);
+    its answers can be wrong, so the caller marks every field for review."""
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    print("\n==============================")
-    print("EXTRACTION REQUEST")
-    print("==============================")
-
-    try:
-
-        print("Filename:", file.filename)
-        print("Content type:", file.content_type)
-
-        if not file.content_type or not file.content_type.startswith("image/"):
-            raise HTTPException(
-                status_code=400,
-                detail="Please upload an image."
-            )
-
-        image_bytes = await file.read()
-
-        print("Image size:", len(image_bytes), "bytes")
-
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-
-        prompt = f"""
+    prompt = f"""
 Extract the information from this passport image. 
-
-Also locate the passport owner's portrait photograph and return its bounding box as normalized integers on a 0 to 1000 scale in exact format [ymin, xmin, ymax, xmax].
 
 IMPORTANT INSTRUCTIONS:
 1. Return ONLY a single valid JSON object starting with {{ and ending with }}.
@@ -569,186 +621,166 @@ IMPORTANT INSTRUCTIONS:
 
 Use exactly these keys:
 
-{json.dumps(FIELDS + ["photo_bbox"], indent=2)}
-
-`photo_bbox`: [ymin, xmin, ymax, xmax] normalized integers from 0 to 1000 for the portrait photo of the passport holder (top-left y, top-left x, bottom-right y, bottom-right x). Example: [150, 40, 650, 350]. If not found, use [].
+{json.dumps(FIELDS, indent=2)}
 
 If a text field cannot be read, use an empty string.
 
 Dates must use YYYY-MM-DD format.
 """
 
-        payload = {
-            "model": "qwen2.5vl:3b-8k",
+    payload = {
+        "model": "qwen2.5vl:3b-8k",
 
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{file.content_type};base64,{image_base64}"
-                            }
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{content_type};base64,{image_base64}"
                         }
-                    ]
-                }
-            ],
+                    }
+                ]
+            }
+        ],
 
-            "temperature": 0,
-            "max_tokens": 1000
-        }
+        "temperature": 0,
+        "max_tokens": 1000
+    }
 
-        print("\nSending request to:")
-        print(QWEN_API_URL)
+    response = requests.post(
+        QWEN_API_URL,
+        json=payload,
+        timeout=120
+    )
 
-        response = requests.post(
-            QWEN_API_URL,
-            json=payload,
-            timeout=120
-        )
+    response.raise_for_status()
 
-        print("\nQWEN STATUS:", response.status_code)
-        print("\nQWEN RESPONSE:")
-        print(response.text[:5000])
+    result = response.json()
 
-        response.raise_for_status()
+    model_output = result["choices"][0]["message"]["content"]
 
-        result = response.json()
+    # Remove markdown code blocks if present
+    cleaned_output = re.sub(r"```(?:json)?", "", model_output).strip()
 
-        model_output = result["choices"][0]["message"]["content"]
+    # Fix invalid model JSON output where model uses [ ... ] with key:value pairs instead of { ... }
+    if cleaned_output.startswith("[") and cleaned_output.endswith("]"):
+        cleaned_output = "{" + cleaned_output[1:-1] + "}"
 
-        print("\nMODEL OUTPUT:")
-        print(model_output)
-
-        # Remove markdown code blocks if present
-        cleaned_output = re.sub(r"```(?:json)?", "", model_output).strip()
-
-        # Fix invalid model JSON output where model uses [ ... ] with key:value pairs instead of { ... }
-        if cleaned_output.startswith("[") and cleaned_output.endswith("]"):
-            cleaned_output = "{" + cleaned_output[1:-1] + "}"
-
+    try:
+        extracted = json.loads(cleaned_output)
+    except json.JSONDecodeError:
         try:
-            extracted = json.loads(cleaned_output)
+            json_match = re.search(r"\{.*\}", cleaned_output, re.DOTALL)
+            clean_json_str = json_match.group(0) if json_match else cleaned_output
+            extracted = json.loads(clean_json_str)
         except json.JSONDecodeError:
-            try:
-                json_match = re.search(r"\{.*\}", cleaned_output, re.DOTALL)
-                clean_json_str = json_match.group(0) if json_match else cleaned_output
-                extracted = json.loads(clean_json_str)
-            except json.JSONDecodeError:
-                print("Failed to parse JSON from output:", cleaned_output)
-                extracted = {}
+            extracted = {}
 
-        def clean_language(val):
-            if not val or not isinstance(val, str):
-                return ""
-            val = val.strip()
-            # If value contains slashes (e.g. "M / ذكر" or "Tunis / تونس"), keep the first English/Latin part
-            if "/" in val:
-                parts = [p.strip() for p in val.split("/")]
-                for p in parts:
-                    if re.search(r"[a-zA-Z0-9]", p):
-                        return p
-                return parts[0]
+    def clean_language(val):
+        if not val or not isinstance(val, str):
+            return ""
+        val = val.strip()
+        # If value contains slashes (e.g. "M / ذكر" or "Tunis / تونس"), keep the first English/Latin part
+        if "/" in val:
+            parts = [p.strip() for p in val.split("/")]
+            for p in parts:
+                if re.search(r"[a-zA-Z0-9]", p):
+                    return p
+            return parts[0]
+        return val
+
+    def normalize_date(val):
+        if not val or not isinstance(val, str):
+            return ""
+        val = val.strip()
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
             return val
+        m = re.match(r"^(\d{2})[/.-](\d{2})[/.-](\d{4})$", val)
+        if m:
+            return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+        m = re.match(r"^(\d{4})[/.-](\d{2})[/.-](\d{2})$", val)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+        return val
 
-        def normalize_date(val):
-            if not val or not isinstance(val, str):
-                return ""
-            val = val.strip()
-            if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
-                return val
-            m = re.match(r"^(\d{2})[/.-](\d{2})[/.-](\d{4})$", val)
-            if m:
-                return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
-            m = re.match(r"^(\d{4})[/.-](\d{2})[/.-](\d{2})$", val)
-            if m:
-                return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
-            return val
+    date_fields = {"date_of_birth", "date_of_issue", "date_of_expiry"}
+    final_data = {}
 
-        date_fields = {"date_of_birth", "date_of_issue", "date_of_expiry"}
-        final_data = {}
+    for field in FIELDS:
+        val = extracted.get(field, "")
+        if val is None:
+            val = ""
+        val = str(val).strip()
+        val = clean_language(val)
+        if field in date_fields:
+            val = normalize_date(val)
+        final_data[field] = val
 
-        for field in FIELDS:
-            val = extracted.get(field, "")
-            if val is None:
-                val = ""
-            val = str(val).strip()
-            val = clean_language(val)
-            if field in date_fields:
-                val = normalize_date(val)
-            final_data[field] = val
+    return final_data
 
-        # Crop owner photo using returned bounding box
-        user_photo_b64 = ""
-        bbox = extracted.get("photo_bbox")
-        if bbox and isinstance(bbox, list) and len(bbox) == 4:
-            try:
-                from PIL import Image
-                import io
 
-                img = Image.open(io.BytesIO(image_bytes))
-                width, height = img.size
-                c1, c2, c3, c4 = bbox
+@app.post("/extract")
+async def extract_passport(file: UploadFile = File(...), engine: str = "auto"):
+    """Read a passport photo into the client form's passport fields.
 
-                # Determine scale and format
-                if max(c1, c2, c3, c4) <= 1.0:
-                    ymin, xmin, ymax, xmax = int(c1 * height), int(c2 * width), int(c3 * height), int(c4 * width)
-                elif max(c1, c2, c3, c4) <= 1000 and max(c3, c4) <= 1000 and (width > 1000 or height > 1000):
-                    ymin = int(c1 * height / 1000.0)
-                    xmin = int(c2 * width / 1000.0)
-                    ymax = int(c3 * height / 1000.0)
-                    xmax = int(c4 * width / 1000.0)
-                else:
-                    ymin, xmin, ymax, xmax = int(c1), int(c2), int(c3), int(c4)
+    engine=auto (default): OCR of the machine-readable zone first (about 2 s, check
+    digits make the numbers certain), the vision model only if that fails.
+    engine=ocr / engine=ai force one of them.
 
-                # Ensure min < max
-                if ymin > ymax:
-                    ymin, ymax = ymax, ymin
-                if xmin > xmax:
-                    xmin, xmax = xmax, xmin
+    The response has the 12 passport fields plus `_meta`: which engine answered, how
+    long it took, and per field `verified` (check digit passed) / `likely` / `review`
+    (the user should check it)."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload an image.")
+    if engine not in ("auto", "ocr", "ai"):
+        raise HTTPException(status_code=422, detail="engine must be auto, ocr or ai")
+    image_bytes = await file.read()
 
-                # Clamp values
-                xmin, xmax = max(0, min(xmin, width)), max(0, min(xmax, width))
-                ymin, ymax = max(0, min(ymin, height)), max(0, min(ymax, height))
+    note = None
+    if engine in ("auto", "ocr"):
+        try:
+            result = await run_in_threadpool(passport_ocr.read_passport, image_bytes)
+        except Exception:
+            traceback.print_exc()
+            result = None
+        if result:
+            return {
+                **result["fields"],
+                "_meta": {"engine": result["engine"], "ms": result["ms"], "confidence": result["confidence"], "note": None},
+            }
+        if engine == "ocr":
+            raise HTTPException(
+                status_code=422,
+                detail="Could not read the passport's two machine-readable lines. Retake the photo with the whole data page in view.",
+            )
+        note = "no_mrz"  # fall back to the vision model
 
-                print(f"Calculated Crop Bounding Box: xmin={xmin}, ymin={ymin}, xmax={xmax}, ymax={ymax} (Image: {width}x{height})")
-
-                if xmax > xmin and ymax > ymin:
-                    cropped = img.crop((xmin, ymin, xmax, ymax))
-                    buffered = io.BytesIO()
-                    cropped.save(buffered, format="JPEG")
-                    cropped_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                    user_photo_b64 = f"data:image/jpeg;base64,{cropped_b64}"
-            except Exception as crop_err:
-                print("Error cropping passport photo:", crop_err)
-
-        final_data["user_photo"] = user_photo_b64
-
-        print("\nFINAL DATA:")
-        print(json.dumps(final_data, indent=2))
-
-        return final_data
-
+    started = time.perf_counter()
+    try:
+        data = await run_in_threadpool(_extract_with_llm, image_bytes, file.content_type)
     except HTTPException:
         raise
-
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach the local model at {QWEN_API_URL}: {e}")
     except Exception as e:
-
-        print("\n!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("ERROR")
-        print("!!!!!!!!!!!!!!!!!!!!!!!!")
-
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        **data,
+        "_meta": {
+            "engine": "ai",
+            "ms": round((time.perf_counter() - started) * 1000),
+            "confidence": {f: "review" for f in FIELDS if data.get(f)},
+            "note": note,
+        },
+    }
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
 
 # =====================================================================
 # ============================  TREASURY  ==============================
@@ -926,11 +958,33 @@ def invoice_out(inv: Invoice) -> dict:
 
 
 @app.get("/invoices")
-def list_invoices(country: str, session: Session = Depends(get_session)):
-    invoices = session.exec(
-        select(Invoice).where(Invoice.country == country).order_by(Invoice.id.desc())
-    ).all()
-    return [invoice_out(i) for i in invoices]
+def list_invoices(
+    response: Response,
+    country: str,
+    q: str | None = None,
+    limit: int | None = Query(None, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+):
+    """A country's invoices and receipts, newest first; `q` matches number, client,
+    passport or company; `limit` / `offset` page them (X-Total-Count has the total)."""
+    conditions = [Invoice.country == country]
+    for term in (q or "").split():
+        like = like_pattern(term)
+        conditions.append(
+            or_(
+                Invoice.number.ilike(like, escape="\\"),
+                Invoice.client_name.ilike(like, escape="\\"),
+                Invoice.client_passport.ilike(like, escape="\\"),
+                Invoice.company_name.ilike(like, escape="\\"),
+            )
+        )
+    total = session.exec(select(func.count()).select_from(Invoice).where(*conditions)).one()
+    stmt = select(Invoice).where(*conditions).order_by(Invoice.id.desc()).offset(offset)
+    if limit:
+        stmt = stmt.limit(limit)
+    response.headers["X-Total-Count"] = str(total)
+    return [invoice_out(i) for i in session.exec(stmt).all()]
 
 
 @app.post("/invoices", status_code=201)
@@ -939,6 +993,26 @@ def create_invoice(data: InvoiceCreate, session: Session = Depends(get_session))
     payload = data.model_dump(exclude={"items"})
     payload["items_json"] = json.dumps([i.model_dump() for i in data.items])
     invoice = Invoice(**payload, number=number)
+    session.add(invoice)
+    session.commit()
+    session.refresh(invoice)
+    return invoice_out(invoice)
+
+
+@app.put("/invoices/{invoice_id}")
+def update_invoice(invoice_id: int, data: InvoiceUpdate, session: Session = Depends(get_session)):
+    invoice = session.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    name = data.client_name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Client name is required")
+    for key, value in data.model_dump(exclude={"items", "client_name"}).items():
+        setattr(invoice, key, value)
+    invoice.client_name = name
+    # Receipts carry no line items.
+    items = data.items if invoice.doc_type == "facture" else []
+    invoice.items_json = json.dumps([i.model_dump() for i in items])
     session.add(invoice)
     session.commit()
     session.refresh(invoice)

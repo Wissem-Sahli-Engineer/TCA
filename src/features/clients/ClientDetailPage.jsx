@@ -43,13 +43,12 @@ export function ClientDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/clients")
+    fetch(`/api/clients/${id}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => {
-        const found = (Array.isArray(data) ? data : []).find((c) => String(c.id) === String(id));
+      .then((found) => {
         if (!cancelled) {
-          setClient(found || null);
-          setMissing(!found);
+          setClient(found);
+          setMissing(false);
         }
       })
       .catch(() => {

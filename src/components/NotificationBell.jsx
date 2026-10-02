@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconBell } from "./ui/Icons";
 import Magnet from "./ui/magnet";
 import { useI18n } from "../store/i18n";
-import { alertReasons, alertText, isAlert } from "../features/clients/options";
+import { alertReasons, alertText } from "../features/clients/options";
 
 const COUNTRIES = [
   { id: "tunisia", currency: "TND" },
@@ -17,13 +17,9 @@ export function NotificationBell() {
   const boxRef = useRef(null);
 
   const load = () => {
-    fetch("/api/clients")
+    fetch("/api/clients?tab=alert&limit=50")
       .then((r) => (r.ok ? r.json() : []))
-      .then((clients) =>
-        setAlertClients(
-          (Array.isArray(clients) ? clients : []).filter(isAlert)
-        )
-      )
+      .then((clients) => setAlertClients(Array.isArray(clients) ? clients : []))
       .catch(() => setAlertClients([]));
 
     Promise.all(

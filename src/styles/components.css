@@ -725,3 +725,23 @@
   background-color: var(--color-surface);
   color: var(--color-muted);
 }
+
+/* Passport reading: confirmed / needs-a-look marks next to a field's label */
+.field-mark {
+  margin-inline-start: 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.field-mark.verified {
+  color: var(--color-success);
+}
+
+.field-mark.review {
+  color: var(--color-warning-text);
+}
+
+.input-box.needs-review {
+  border-color: var(--color-warning-text);
+  background-color: var(--color-warning-bg);
+}

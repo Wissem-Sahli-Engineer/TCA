@@ -7,6 +7,14 @@ import { PASSPORT_FIELDS, BUSINESS_FIELDS, CHOICE_FIELDS } from "./fields";
 import { ClientChoiceFields } from "./ClientChoiceFields";
 import { useI18n } from "../../store/i18n";
 
+// ✓ when the passport's own check digit confirms the value, ⚠ when it needs a look.
+function FieldMark({ status }) {
+  const t = useI18n((s) => s.t);
+  if (status === "verified") return <span className="field-mark verified" title={t("clients.markVerified")}>✓</span>;
+  if (status === "review") return <span className="field-mark review" title={t("clients.markReview")}>⚠</span>;
+  return null;
+}
+
 const EMPTY = {
   ...Object.fromEntries([...PASSPORT_FIELDS, ...BUSINESS_FIELDS, ...CHOICE_FIELDS].map((k) => [k, ""])),
   category: "normal",
@@ -23,6 +31,8 @@ export function AddClientPage() {
   const [passportFile, setPassportFile] = useState(null);
   const [passportUrl, setPassportUrl] = useState("");
   const [extracting, setExtracting] = useState(false);
+  // Per passport field after reading: "verified" (check digit passed), "likely", "review".
+  const [confidence, setConfidence] = useState({});
 
   const [photoFile, setPhotoFile] = useState(null);
   const [photoUrl, setPhotoUrl] = useState("");
@@ -31,7 +41,11 @@ export function AddClientPage() {
 
   const [busy, setBusy] = useState(false);
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  // Editing a field means the user has checked it: drop its mark.
+  const set = (key) => (e) => {
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+    setConfidence((c) => (c[key] ? { ...c, [key]: undefined } : c));
+  };
 
   const onPassportSelect = (e) => {
     const file = e.target.files?.[0];
@@ -52,8 +66,16 @@ export function AddClientPage() {
       const res = await fetch("/api/extract", { method: "POST", body });
       if (!res.ok) throw new Error("fail");
       const data = await res.json();
+      const meta = data._meta || {};
       setForm((f) => ({ ...f, ...Object.fromEntries(PASSPORT_FIELDS.map((k) => [k, data[k] || ""])) }));
-      toast(t("clients.extracted"), "ok");
+      // A field the reading left empty is also something to fill in.
+      setConfidence(
+        Object.fromEntries(
+          PASSPORT_FIELDS.map((k) => [k, data[k] ? meta.confidence?.[k] : "review"])
+        )
+      );
+      if (meta.engine === "ai") toast(t("clients.extractedAi"), "err");
+      else toast(t("clients.extractedOcr").replace("{s}", ((meta.ms || 0) / 1000).toFixed(1)), "ok");
     } catch {
       toast(t("clients.extractFailed"), "err");
     } finally {
@@ -168,7 +190,7 @@ export function AddClientPage() {
         </h2>
         <div className="grid-2">
           {PASSPORT_FIELDS.map((key) => (
-            <Field key={key} label={t(`clients.fields.${key}`)}>
+            <Field key={key} label={<>{t(`clients.fields.${key}`)} <FieldMark status={confidence[key]} /></>}>
               {key === "sex" ? (
                 <BoxSelect value={form.sex} onChange={set("sex")}>
                   <option value="">{t("clients.selectValue")}</option>
@@ -181,6 +203,7 @@ export function AddClientPage() {
                   type={key.includes("date") ? "date" : "text"}
                   value={form[key]}
                   onChange={set(key)}
+                  className={confidence[key] === "review" ? "needs-review" : ""}
                 />
               )}
             </Field>

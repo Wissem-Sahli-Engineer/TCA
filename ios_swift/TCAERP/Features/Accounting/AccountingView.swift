@@ -72,10 +72,10 @@ struct AccountingView: View {
 
     private func loadSummary() async {
         let query = ["country": country.rawValue]
-        let invoices: [Invoice] = (try? await API.shared.get("/invoices", query: query)) ?? []
+        let invoices: (items: [Invoice], total: Int)? = try? await API.shared.getPage("/invoices", query: query, limit: 1, offset: 0)
         let treasury: TreasuryResponse? = try? await API.shared.get("/treasury", query: query)
         let accounts: [BankAccount] = (try? await API.shared.get("/banking/accounts", query: query)) ?? []
-        summary = (invoices.count, treasury?.currentMonth.spending ?? 0, accounts.reduce(0) { $0 + $1.balance })
+        summary = (invoices?.total ?? 0, treasury?.currentMonth.spending ?? 0, accounts.reduce(0) { $0 + $1.balance })
     }
 }
 
@@ -85,15 +85,35 @@ struct InvoicesSection: View {
     let country: Country
     var onChange: () -> Void
 
+    private let pageSize = 25
     @StateObject private var previewer = FilePreviewer()
     @State private var invoices: [Invoice] = []
+    @State private var total = 0
+    @State private var query = ""
+    @State private var loadedQuery = ""
+    @State private var loadingMore = false
     @State private var showNew = false
+    @State private var editing: Invoice?
     @State private var toRemove: Invoice?
+
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
+
+    private var params: [String: String] {
+        var p = ["country": country.rawValue]
+        if !trimmedQuery.isEmpty { p["q"] = trimmedQuery }
+        return p
+    }
 
     var body: some View {
         Section {
             Button { showNew = true } label: {
                 Label(tr("invoicesTab.newDocument"), systemImage: "plus.circle.fill")
+            }
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(Color.muted)
+                TextField(tr("invoicesTab.searchPlaceholder"), text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
             if invoices.isEmpty {
                 EmptyRow(text: tr("invoicesTab.noDocuments"), systemImage: "doc.text")
@@ -120,21 +140,53 @@ struct InvoicesSection: View {
                         }
                     }
                 }
+                .onAppear {
+                    if invoice.id == invoices.last?.id { Task { await loadMore() } }
+                }
+                .swipeActions(edge: .leading) {
+                    Button { editing = invoice } label: {
+                        Label(tr("invoicesTab.edit"), systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                }
                 .swipeActions {
                     Button { toRemove = invoice } label: {
                         Label(tr("invoicesTab.remove"), systemImage: "trash")
                     }
                     .tint(.red)
                 }
+                .contextMenu {
+                    Button { editing = invoice } label: { Label(tr("invoicesTab.edit"), systemImage: "pencil") }
+                }
+            }
+            if invoices.count < total {
+                if loadingMore {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                } else {
+                    Button(tr("clients.loadMore")) { Task { await loadMore() } }
+                }
             }
         } header: {
             Text("\(tr("invoicesTab.documentsFor")) — \(country.label)")
         }
-        .task { await load() }
+        .task(id: trimmedQuery) {
+            if trimmedQuery != loadedQuery { try? await Task.sleep(for: .milliseconds(300)) }
+            guard !Task.isCancelled else { return }
+            loadedQuery = trimmedQuery
+            await load()
+        }
         .filePreview(previewer)
         .sheet(isPresented: $showNew) {
             NavigationStack {
                 InvoiceFormView(country: country) {
+                    Task { await load() }
+                    onChange()
+                }
+            }
+        }
+        .sheet(item: $editing) { invoice in
+            NavigationStack {
+                InvoiceFormView(country: country, editing: invoice) {
                     Task { await load() }
                     onChange()
                 }
@@ -156,12 +208,28 @@ struct InvoicesSection: View {
     }
 
     private func load() async {
-        invoices = (try? await API.shared.get("/invoices", query: ["country": country.rawValue])) ?? []
+        guard let page: (items: [Invoice], total: Int) = try? await API.shared.getPage("/invoices", query: params, limit: pageSize, offset: 0),
+              !Task.isCancelled else { return }
+        invoices = page.items
+        total = page.total
+    }
+
+    private func loadMore() async {
+        guard invoices.count < total, !loadingMore else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        let key = trimmedQuery
+        if let page: (items: [Invoice], total: Int) = try? await API.shared.getPage("/invoices", query: params, limit: pageSize, offset: invoices.count),
+           key == trimmedQuery {
+            invoices += page.items
+            total = page.total
+        }
     }
 }
 
 struct InvoiceFormView: View {
     let country: Country
+    var editing: Invoice?
     var onCreated: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -176,7 +244,9 @@ struct InvoiceFormView: View {
     @State private var timbre = "1"
     @State private var amountPaid = ""
     @State private var items: [ItemDraft] = [ItemDraft()]
-    @State private var clients: [Client] = []
+    @State private var clientID: Int?
+    @State private var pickerQuery = ""
+    @State private var matches: [Client] = []
     @State private var busy = false
 
     struct ItemDraft: Identifiable {
@@ -188,6 +258,30 @@ struct InvoiceFormView: View {
 
     private var isFacture: Bool { docType == "facture" }
 
+    init(country: Country, editing: Invoice? = nil, onCreated: @escaping () -> Void) {
+        self.country = country
+        self.editing = editing
+        self.onCreated = onCreated
+        guard let inv = editing else { return }
+        func text(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+        _docType = State(initialValue: inv.docType)
+        _clientName = State(initialValue: inv.clientName)
+        _clientPassport = State(initialValue: inv.clientPassport ?? "")
+        _clientMf = State(initialValue: inv.clientMf ?? "")
+        _companyName = State(initialValue: inv.companyName ?? "")
+        _serviceType = State(initialValue: inv.serviceType ?? "")
+        _issueDate = State(initialValue: inv.issueDate)
+        _tvaRate = State(initialValue: text(inv.tvaRate))
+        _timbre = State(initialValue: text(inv.timbre))
+        _amountPaid = State(initialValue: text(inv.amountPaid))
+        _clientID = State(initialValue: inv.clientId)
+        if !inv.items.isEmpty {
+            _items = State(initialValue: inv.items.map {
+                ItemDraft(designation: $0.designation, quantity: text($0.quantity), unitPrice: text($0.unitPrice))
+            })
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -196,18 +290,24 @@ struct InvoiceFormView: View {
                     Text(tr("invoicesTab.recu")).tag("recu")
                 }
                 .pickerStyle(.segmented)
+                .disabled(editing != nil)
+                if editing != nil {
+                    Text(tr("invoicesTab.lockedHint")).font(.caption).foregroundStyle(Color.muted)
+                }
             }
 
             Section(tr("invoicesTab.client")) {
                 LabeledField(label: tr("invoicesTab.clientName"), text: $clientName, autocapitalize: .words)
-                if !clients.isEmpty {
-                    Menu {
-                        ForEach(clients) { client in
-                            Button("\(client.fullName) · \(client.passportNumber)") { fill(from: client) }
-                        }
-                    } label: {
-                        Label(tr("clients.title"), systemImage: "person.crop.circle.badge.plus")
-                            .font(.subheadline)
+                HStack {
+                    Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(Color.muted)
+                    TextField(tr("clients.title"), text: $pickerQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                ForEach(matches) { client in
+                    Button("\(client.fullName) · \(client.passportNumber)") {
+                        fill(from: client)
+                        pickerQuery = ""
                     }
                 }
                 LabeledField(label: tr("invoicesTab.clientPassport"), text: $clientPassport, autocapitalize: .characters)
@@ -249,7 +349,7 @@ struct InvoiceFormView: View {
             }
 
             Section {
-                PrimaryButton(title: isFacture ? tr("invoicesTab.createFacture") : tr("invoicesTab.createRecu"), loading: busy) {
+                PrimaryButton(title: editing != nil ? tr("invoicesTab.saveChanges") : (isFacture ? tr("invoicesTab.createFacture") : tr("invoicesTab.createRecu")), loading: busy) {
                     Task { await submit() }
                 }
                 .listRowInsets(EdgeInsets())
@@ -257,17 +357,26 @@ struct InvoiceFormView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle(tr("invoicesTab.newDocument"))
+        .navigationTitle(editing == nil ? tr("invoicesTab.newDocument") : tr("invoicesTab.editingInvoice"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(tr("common.cancel")) { dismiss() }
             }
         }
-        .task { clients = (try? await API.shared.get("/clients")) ?? [] }
+        .task(id: pickerQuery) {
+            // Client picker: the server searches, nothing is preloaded.
+            let q = pickerQuery.trimmingCharacters(in: .whitespaces)
+            guard q.count >= 2 else { matches = []; return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            let page: (items: [Client], total: Int)? = try? await API.shared.getPage("/clients", query: ["q": q], limit: 6, offset: 0)
+            if !Task.isCancelled { matches = page?.items ?? [] }
+        }
     }
 
     private func fill(from client: Client) {
+        clientID = client.id
         clientName = client.fullName
         clientPassport = client.passportNumber
         if let mf = client.codeFiscal { clientMf = mf }
@@ -287,6 +396,23 @@ struct InvoiceFormView: View {
                 return InvoiceItem(designation: designation, quantity: Fmt.parse(item.quantity) ?? 1, unitPrice: price)
             }
             : []
+        if let editing {
+            let update = InvoiceUpdate(
+                clientId: clientID, clientName: name, clientPassport: clientPassport.nilIfBlank,
+                clientMf: clientMf.nilIfBlank, companyName: companyName.nilIfBlank,
+                serviceType: serviceType.nilIfBlank, issueDate: issueDate,
+                tvaRate: Fmt.parse(tvaRate) ?? 0.19, timbre: Fmt.parse(timbre) ?? 1,
+                amountPaid: Fmt.parse(amountPaid) ?? 0, items: lineItems)
+            do {
+                let _: Invoice = try await API.shared.put("/invoices/\(editing.id)", body: update)
+                toast(tr("invoicesTab.updated"))
+                onCreated()
+                dismiss()
+            } catch {
+                toast("\(tr("invoicesTab.updateFailed")) — \(error.localizedDescription)", error: true)
+            }
+            return
+        }
         let payload = NewInvoice(
             country: country.rawValue,
             docType: docType,

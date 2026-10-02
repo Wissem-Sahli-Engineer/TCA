@@ -20,10 +20,13 @@ export function EditClientPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    fetch("/api/clients")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((clients) => {
-        const found = (Array.isArray(clients) ? clients : []).find((c) => String(c.id) === String(id));
+    fetch(`/api/clients/${id}`)
+      .then((r) => {
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error("fail");
+        return r.json();
+      })
+      .then((found) => {
         if (found) {
           setForm(Object.fromEntries(ALL_FIELDS.map((k) => [k, found[k] ?? ""])));
           setPhotoUrl(found.user_photo ? withToken(found.user_photo) : "");

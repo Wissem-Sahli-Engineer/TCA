@@ -22,35 +22,34 @@ struct ClientsListView: View {
             case .alert: return "exclamationmark.triangle"
             }
         }
-        func matches(_ client: Client) -> Bool {
-            switch self {
-            case .all: return true
-            case .fair: return client.clientCategory == .fair
-            case .reservation: return client.clientCategory == .reservation
-            case .alert: return client.isAlert
-            }
-        }
+        /// The server's name for the tab (it does the filtering).
+        var server: String { rawValue }
     }
 
+    private let pageSize = 25
     @State private var clients: [Client] = []
+    @State private var total = 0
+    @State private var alertCount = 0
     @State private var tab: Tab = .all
     @State private var query = ""
+    @State private var loadedQuery = ""
     @State private var statusFilter: VisaStatus?
     @State private var error: String?
     @State private var loaded = false
+    @State private var loadingMore = false
     @State private var path: [Int] = []
     @State private var showAdd = false
 
-    private var filtered: [Client] {
-        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
-        return clients.filter { client in
-            let matchesQuery = q.isEmpty
-                || client.fullName.lowercased().contains(q)
-                || client.passportNumber.lowercased().contains(q)
-                || (client.phone ?? "").contains(q)
-            let matchesStatus = statusFilter == nil || client.visa == statusFilter
-            return tab.matches(client) && matchesQuery && matchesStatus
-        }
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
+    private var filterKey: String { "\(trimmedQuery)|\(tab.rawValue)|\(statusFilter?.rawValue ?? "")" }
+    private var hasMore: Bool { clients.count < total }
+
+    /// Search, tab and status are applied by the server; only one page is downloaded at a time.
+    private var params: [String: String] {
+        var p = ["tab": tab.server]
+        if !trimmedQuery.isEmpty { p["q"] = trimmedQuery }
+        if let statusFilter { p["status"] = statusFilter.rawValue }
+        return p
     }
 
     var body: some View {
@@ -59,7 +58,7 @@ struct ClientsListView: View {
                 Section {
                     IconTabPicker(items: Tab.allCases.map { tab in
                         .init(value: tab, label: tab.label, systemImage: tab.icon,
-                              badge: tab == .alert ? clients.filter(\.isAlert).count : nil)
+                              badge: tab == .alert ? alertCount : nil)
                     }, selection: $tab)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
@@ -67,20 +66,38 @@ struct ClientsListView: View {
                 }
                 if !loaded {
                     HStack { Spacer(); ProgressView(); Spacer() }.listRowBackground(Color.clear)
-                } else if filtered.isEmpty {
+                } else if clients.isEmpty {
                     EmptyRow(text: error ?? tr("clients.noMatches"), systemImage: error == nil ? "person.crop.circle.badge.questionmark" : "wifi.exclamationmark")
                         .listRowBackground(Color.clear)
                 } else {
-                    ForEach(filtered) { client in
+                    ForEach(clients) { client in
                         NavigationLink(value: client.id) { ClientRow(client: client) }
+                            .onAppear {
+                                // Reaching the last loaded row fetches the next page.
+                                if client.id == clients.last?.id { Task { await loadMore() } }
+                            }
                     }
+                    Section {
+                        if loadingMore {
+                            HStack { Spacer(); ProgressView(); Spacer() }
+                        } else {
+                            Text(tr("clients.showing")
+                                .replacingOccurrences(of: "{n}", with: "\(clients.count)")
+                                .replacingOccurrences(of: "{total}", with: "\(total)"))
+                                .font(.footnote)
+                                .foregroundStyle(Color.muted)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
             .searchable(text: $query, prompt: tr("clients.filterPlaceholder"))
             .navigationTitle(tr("clients.title"))
             .navigationDestination(for: Int.self) { id in
-                ClientDetailView(clientID: id, onChange: { Task { await load() } })
+                ClientDetailView(clientID: id, onChange: { Task { await loadFirstPage() } })
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -101,13 +118,19 @@ struct ClientsListView: View {
                 }
             }
             .rootToolbar()
-            .refreshable { await load() }
-            .task { await load() }
+            .refreshable { await loadFirstPage() }
+            .task(id: filterKey) {
+                // Typing waits for a pause; switching tab or status is instant.
+                if trimmedQuery != loadedQuery { try? await Task.sleep(for: .milliseconds(300)) }
+                guard !Task.isCancelled else { return }
+                loadedQuery = trimmedQuery
+                await loadFirstPage()
+            }
             .sheet(isPresented: $showAdd) {
                 NavigationStack {
                     ClientFormView(mode: .add) { saved in
                         Task {
-                            await load()
+                            await loadFirstPage()
                             path = [saved.id]
                         }
                     }
@@ -116,14 +139,31 @@ struct ClientsListView: View {
         }
     }
 
-    private func load() async {
+    private func loadFirstPage() async {
         do {
-            clients = try await API.shared.get("/clients")
+            let page: (items: [Client], total: Int) = try await API.shared.getPage("/clients", query: params, limit: pageSize, offset: 0)
+            guard !Task.isCancelled else { return }
+            clients = page.items
+            total = page.total
             error = nil
         } catch {
+            guard !Task.isCancelled else { return }
             self.error = tr("clients.serverError")
         }
         loaded = true
+        if let summary: ClientSummary = try? await API.shared.get("/clients/summary") { alertCount = summary.alerts }
+    }
+
+    private func loadMore() async {
+        guard hasMore, !loadingMore else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        let key = filterKey
+        if let page: (items: [Client], total: Int) = try? await API.shared.getPage("/clients", query: params, limit: pageSize, offset: clients.count),
+           key == filterKey {   // ignore an answer that arrives after the filters changed
+            clients += page.items
+            total = page.total
+        }
     }
 }
 
@@ -160,6 +200,7 @@ struct ClientRow: View {
                     StatusBadge(payment: payment)
                 }
             }
+            .frame(width: 112, alignment: .trailing)
         }
         .padding(.vertical, 4)
     }
