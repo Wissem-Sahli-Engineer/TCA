@@ -366,3 +366,60 @@
   margin: 12px 0 6px;
   color: var(--color-ink);
 }
+
+/* ---------- Custom stats charts ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 16px 24px;
+  background-color: rgba(0, 0, 0, 0.45);
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 980px;
+  border-radius: var(--radius-card);
+  padding: 24px;
+  background-color: var(--color-white);
+  box-shadow: var(--shadow-login);
+}
+
+.chart-builder-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .chart-builder-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-type-picker {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.chart-type-picker button {
+  padding: 8px 10px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-field);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-muted);
+  background-color: var(--color-white);
+}
+
+.chart-type-picker button.active {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+  background-color: var(--color-brand-wash);
+}

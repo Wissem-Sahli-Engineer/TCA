@@ -14,6 +14,14 @@ struct ClientsListView: View {
             case .alert: return tr("clients.tabAlert")
             }
         }
+        var icon: String {
+            switch self {
+            case .all: return "person.2"
+            case .fair: return "building.columns"
+            case .reservation: return "airplane"
+            case .alert: return "exclamationmark.triangle"
+            }
+        }
         func matches(_ client: Client) -> Bool {
             switch self {
             case .all: return true
@@ -49,11 +57,13 @@ struct ClientsListView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
-                    Picker("", selection: $tab) {
-                        ForEach(Tab.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
+                    IconTabPicker(items: Tab.allCases.map { tab in
+                        .init(value: tab, label: tab.label, systemImage: tab.icon,
+                              badge: tab == .alert ? clients.filter(\.isAlert).count : nil)
+                    }, selection: $tab)
                     .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                    .listRowBackground(Color.clear)
                 }
                 if !loaded {
                     HStack { Spacer(); ProgressView(); Spacer() }.listRowBackground(Color.clear)

@@ -1,23 +1,27 @@
 import Charts
 import SwiftUI
 
-/// Analytics (src/features/stats/StatsPage.jsx).
+/// Analytics (src/features/stats/StatsPage.jsx), plus the user's own
+/// custom charts (saved on the server, shared with the website).
 struct StatsView: View {
+    @EnvironmentObject private var auth: AuthStore
     @State private var clients: [Client] = []
-    @State private var country = "all"
+    @State private var country: Country?
     @State private var visaType = "all"
-    @State private var treasuryMonthly: [TreasuryMonth] = []
-    @State private var factures = 0
-    @State private var recus = 0
-    @State private var bankAccounts: [BankAccount] = []
-    @State private var payrollByPeriod: [(period: String, total: Double)] = []
+    // Accounting data per country, so switching the filter doesn't refetch.
+    @State private var treasury: [Country: [TreasuryMonth]] = [:]
+    @State private var invoices: [Country: [Invoice]] = [:]
+    @State private var accounts: [Country: [BankAccount]] = [:]
+    @State private var payslips: [Payslip] = []
+    @State private var charts: [StatsChart] = []
+    @State private var showBuilder = false
+    @State private var chartToRemove: StatsChart?
 
-    private var countries: [String] { Array(Set(clients.compactMap(\.country).filter { !$0.isEmpty })).sorted() }
-    private var visaTypes: [String] { Array(Set(clients.compactMap(\.visaType).filter { !$0.isEmpty })).sorted() }
+    private var selectedCountries: [Country] { country.map { [$0] } ?? Country.allCases }
 
     private var filtered: [Client] {
         clients.filter {
-            (country == "all" || $0.country == country) && (visaType == "all" || $0.visaType == visaType)
+            (country == nil || $0.countryGroup == country) && (visaType == "all" || $0.visaType == visaType)
         }
     }
 
@@ -31,18 +35,39 @@ struct StatsView: View {
     }
 
     private var statusCounts: [(status: VisaStatus, count: Int)] {
-        VisaStatus.allCases.map { status in
-            (status, clients.filter { $0.visa == status }.count)
-        }
+        VisaStatus.allCases.map { status in (status, filtered.filter { $0.visa == status }.count) }
     }
 
-    private var byCountry: [(name: String, value: Int, color: Color)] {
-        [
-            ("tunisia", Color.accentPurple),
-            ("libya", Color.accentOrange),
-        ].map { name, color in
-            (name, clients.filter { $0.country?.lowercased() == name }.count, color)
+    private var byCountry: [(name: String, value: Double, color: Color)] {
+        Country.allCases.map { c in
+            (c.label, Double(filtered.filter { $0.countryGroup == c }.count), c == .tunisia ? Color.accentPurple : Color.accentOrange)
         }.filter { $0.value > 0 }
+    }
+
+    private var treasuryMonthly: [TreasuryMonth] {
+        var merged: [String: TreasuryMonth] = [:]
+        for c in selectedCountries {
+            for row in treasury[c] ?? [] {
+                var bucket = merged[row.month] ?? TreasuryMonth(month: row.month, spending: 0, gathering: 0)
+                bucket.gathering += row.gathering
+                bucket.spending += row.spending
+                merged[row.month] = bucket
+            }
+        }
+        return Array(merged.values.sorted { $0.month < $1.month }.suffix(6))
+    }
+
+    private var invoiceList: [Invoice] { selectedCountries.flatMap { invoices[$0] ?? [] } }
+    private var bankAccounts: [BankAccount] { selectedCountries.flatMap { accounts[$0] ?? [] } }
+
+    private var payrollByPeriod: [(period: String, total: Double)] {
+        var order: [String] = []
+        var totals: [String: Double] = [:]
+        for p in payslips {
+            if totals[p.periodLabel] == nil { order.append(p.periodLabel) }
+            totals[p.periodLabel, default: 0] += p.netToPay
+        }
+        return order.map { ($0, totals[$0] ?? 0) }
     }
 
     var body: some View {
@@ -52,20 +77,17 @@ struct StatsView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text(tr("statsPage.filters")).font(.headline)
-                    HStack {
-                        Text(tr("statsPage.country")).foregroundStyle(Color.muted)
-                        Spacer()
-                        Picker(tr("statsPage.country"), selection: $country) {
-                            Text(tr("common.allCountries")).tag("all")
-                            ForEach(countries, id: \.self) { Text(Country.label(for: $0)).tag($0) }
-                        }
+                    Picker(tr("statsPage.country"), selection: $country) {
+                        Text(tr("common.allCountries")).tag(Country?.none)
+                        ForEach(Country.allCases) { Text("\($0.flag) \($0.label)").tag(Optional($0)) }
                     }
+                    .pickerStyle(.segmented)
                     HStack {
                         Text(tr("statsPage.visaType")).foregroundStyle(Color.muted)
                         Spacer()
                         Picker(tr("statsPage.visaType"), selection: $visaType) {
                             Text(tr("common.allTypes")).tag("all")
-                            ForEach(visaTypes, id: \.self) { Text(VisaType(rawValue: $0)?.label ?? $0).tag($0) }
+                            ForEach(VisaType.allCases) { Text($0.label).tag($0.rawValue) }
                         }
                     }
                     Text("\(filtered.count) \(tr("statsPage.clientsMatch"))")
@@ -75,7 +97,7 @@ struct StatsView: View {
                 .card()
 
                 chartCard(tr("statsPage.newClientsPerMonth"),
-                          subtitle: "\(country == "all" ? tr("common.allCountries") : Country.label(for: country)) · \(visaType == "all" ? tr("statsPage.allVisaTypes") : (VisaType(rawValue: visaType)?.label ?? visaType))") {
+                          subtitle: "\(country?.label ?? tr("common.allCountries")) · \(visaType == "all" ? tr("statsPage.allVisaTypes") : (VisaType(rawValue: visaType)?.label ?? visaType))") {
                     if series.isEmpty {
                         EmptyRow(text: tr("statsPage.noClientData"), systemImage: "chart.line.uptrend.xyaxis")
                     } else {
@@ -98,11 +120,13 @@ struct StatsView: View {
                     if byCountry.isEmpty {
                         EmptyRow(text: tr("statsPage.noDataYet"), systemImage: "chart.pie")
                     } else {
-                        DonutChart(slices: byCountry.map { (Country.label(for: $0.name), Double($0.value), $0.color) })
+                        DonutChart(slices: byCountry)
                     }
                 }
 
                 chartCard(tr("statsPage.facturesVsRecus")) {
+                    let factures = invoiceList.filter { $0.docType == "facture" }.count
+                    let recus = invoiceList.filter { $0.docType == "recu" }.count
                     if factures + recus == 0 {
                         EmptyRow(text: tr("statsPage.noInvoicesYet"), systemImage: "chart.pie")
                     } else {
@@ -125,17 +149,10 @@ struct StatsView: View {
                     if bankAccounts.isEmpty {
                         EmptyRow(text: tr("statsPage.noAccountsYet"), systemImage: "building.columns")
                     } else {
-                        Chart(bankAccounts) { account in
-                            BarMark(x: .value("Balance", account.balance), y: .value("Account", account.name))
-                                .foregroundStyle(Color.accentGreen)
-                                .cornerRadius(6)
-                                .annotation(position: .trailing) {
-                                    Text(Fmt.money(account.balance, account.currency))
-                                        .font(.caption2).foregroundStyle(Color.muted)
-                                }
-                        }
-                        .chartXAxis(.hidden)
-                        .frame(height: max(120, CGFloat(bankAccounts.count) * 44))
+                        BarList(items: bankAccounts.map {
+                            BarList.Item(id: "\($0.id)", label: $0.name, value: $0.balance, color: .accentGreen,
+                                         valueText: Fmt.money($0.balance, $0.currency))
+                        })
                     }
                 }
 
@@ -144,21 +161,74 @@ struct StatsView: View {
                         EmptyRow(text: tr("statsPage.noPayslipsYet"), systemImage: "banknote")
                     } else {
                         Chart(payrollByPeriod, id: \.period) { row in
-                            BarMark(x: .value("Period", row.period), y: .value("Total", row.total))
+                            BarMark(x: .value("Period", row.period), y: .value(tr("payroll.grossTotalCol"), row.total))
                                 .foregroundStyle(Color.accentNavy)
                                 .cornerRadius(6)
                         }
                         .frame(height: 200)
                     }
                 }
+
+                customChartsSection
             }
             .padding()
         }
         .background(Color.surface)
         .navigationTitle(tr("nav.stats"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showBuilder = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel(tr("customCharts.add"))
+            }
+        }
         .refreshable { await load() }
         .task { await load() }
+        .sheet(isPresented: $showBuilder) {
+            NavigationStack {
+                ChartBuilderView(isAdmin: auth.isAdmin) { Task { await loadCharts() } }
+            }
+        }
+        .confirmationDialog(tr("customCharts.removeConfirm"), isPresented: Binding(
+            get: { chartToRemove != nil }, set: { if !$0 { chartToRemove = nil } }
+        ), titleVisibility: .visible) {
+            Button(tr("customCharts.remove"), role: .destructive) {
+                if let chart = chartToRemove {
+                    Task {
+                        try? await API.shared.delete("/stats/charts/\(chart.id)")
+                        await loadCharts()
+                    }
+                }
+            }
+        }
+    }
+
+    private var customChartsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("customCharts.title")).font(.title3.weight(.bold))
+                    Text(tr("customCharts.subtitle")).font(.footnote).foregroundStyle(Color.muted)
+                }
+                Spacer()
+            }
+            .padding(.top, 12)
+
+            ForEach(charts) { chart in
+                CustomChartCard(chart: chart) { chartToRemove = chart }
+            }
+
+            if charts.isEmpty {
+                Text(tr("customCharts.empty"))
+                    .font(.subheadline)
+                    .foregroundStyle(Color.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .card(padding: 20)
+            }
+
+            PrimaryButton(title: tr("customCharts.add"), systemImage: "plus") { showBuilder = true }
+        }
     }
 
     @ViewBuilder
@@ -175,44 +245,23 @@ struct StatsView: View {
         .card()
     }
 
+    private func loadCharts() async {
+        charts = (try? await API.shared.get("/stats/charts")) ?? charts
+    }
+
     private func load() async {
+        await loadCharts()
         if let data: [Client] = try? await API.shared.get("/clients") { clients = data }
 
-        var merged: [String: TreasuryMonth] = [:]
-        var accounts: [BankAccount] = []
-        var fac = 0, rec = 0
-        for country in Country.allCases {
-            let query = ["country": country.rawValue]
-            if let t: TreasuryResponse = try? await API.shared.get("/treasury", query: query) {
-                for row in t.history {
-                    var bucket = merged[row.month] ?? TreasuryMonth(month: row.month, spending: 0, gathering: 0)
-                    bucket.gathering += row.gathering
-                    bucket.spending += row.spending
-                    merged[row.month] = bucket
-                }
-            }
-            if let list: [BankAccount] = try? await API.shared.get("/banking/accounts", query: query) {
-                accounts += list
-            }
-            if let invoices: [Invoice] = try? await API.shared.get("/invoices", query: query) {
-                fac += invoices.filter { $0.docType == "facture" }.count
-                rec += invoices.filter { $0.docType == "recu" }.count
-            }
+        // Treasury, banking, invoices and payroll are admin-only.
+        guard auth.isAdmin else { return }
+        for c in Country.allCases {
+            let query = ["country": c.rawValue]
+            if let t: TreasuryResponse = try? await API.shared.get("/treasury", query: query) { treasury[c] = t.history }
+            if let list: [BankAccount] = try? await API.shared.get("/banking/accounts", query: query) { accounts[c] = list }
+            if let list: [Invoice] = try? await API.shared.get("/invoices", query: query) { invoices[c] = list }
         }
-        treasuryMonthly = Array(merged.values.sorted { $0.month < $1.month }.suffix(6))
-        bankAccounts = accounts
-        factures = fac
-        recus = rec
-
-        if let payslips: [Payslip] = try? await API.shared.get("/payroll/payslips") {
-            var order: [String] = []
-            var totals: [String: Double] = [:]
-            for p in payslips {
-                if totals[p.periodLabel] == nil { order.append(p.periodLabel) }
-                totals[p.periodLabel, default: 0] += p.grossTotal
-            }
-            payrollByPeriod = order.map { ($0, totals[$0] ?? 0) }
-        }
+        payslips = (try? await API.shared.get("/payroll/payslips")) ?? payslips
     }
 }
 

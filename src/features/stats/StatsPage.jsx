@@ -18,7 +18,13 @@ import { PageTitle } from "../../components/ui/Card";
 import { BoxSelect } from "../../components/ui/Input";
 import { useScrollReveal } from "../../lib/useScrollReveal";
 import { useI18n } from "../../store/i18n";
-import { VISA_STATUSES, optionLabel, visaStatusOf } from "../clients/options";
+import { VISA_STATUSES, VISA_TYPES, clientCountry, optionLabel, visaStatusOf } from "../clients/options";
+import { CustomChartsSection } from "./CustomChartsSection";
+
+// Recharts anchors axis labels for left-to-right text; under dir="rtl" the
+// labels slide onto the bars. Keep the chart LTR and mirror it with
+// reversed / orientation instead.
+const CHART_STYLE = { direction: "ltr" };
 
 const COUNTRIES = ["tunisia", "libya"];
 
@@ -28,77 +34,45 @@ export function StatsPage() {
   const root = useRef(null);
   useScrollReveal(root);
   const t = useI18n((s) => s.t);
+  // Charts are mirrored in Arabic; their text stays LTR-anchored (see CHART_STYLE).
+  const isRtl = useI18n((s) => s.isRtl);
   const [clients, setClients] = useState([]);
   const [country, setCountry] = useState("all");
   const [visaType, setVisaType] = useState("all");
 
-  const [treasuryMonthly, setTreasuryMonthly] = useState([]);
-  const [invoicesByType, setInvoicesByType] = useState([]);
-  const [bankAccounts, setBankAccounts] = useState([]);
-  const [payrollByPeriod, setPayrollByPeriod] = useState([]);
+  // Accounting data per country, so switching the filter doesn't refetch.
+  const [treasury, setTreasury] = useState({});
+  const [invoices, setInvoices] = useState({});
+  const [accounts, setAccounts] = useState({});
+  const [payslips, setPayslips] = useState([]);
 
   useEffect(() => {
-    fetch("/api/clients")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setClients(Array.isArray(data) ? data : []))
-      .catch(() => setClients([]));
+    const json = (url, fallback) =>
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : fallback))
+        .catch(() => fallback);
 
-    Promise.all(COUNTRIES.map((c) => fetch(`/api/treasury?country=${c}`).then((r) => (r.ok ? r.json() : null))))
-      .then((results) => {
-        const merged = {};
-        results.forEach((data) => {
-          if (!data) return;
-          (data.history || []).forEach((row) => {
-            const bucket = merged[row.month] || { month: row.month, gathering: 0, spending: 0 };
-            bucket.gathering += row.gathering;
-            bucket.spending += row.spending;
-            merged[row.month] = bucket;
-          });
-        });
-        setTreasuryMonthly(Object.values(merged).sort((a, b) => a.month.localeCompare(b.month)).slice(-6));
-      })
-      .catch(() => {});
+    json("/api/clients", []).then((data) => setClients(Array.isArray(data) ? data : []));
+    json("/api/payroll/payslips", []).then((data) => setPayslips(Array.isArray(data) ? data : []));
 
-    Promise.all(COUNTRIES.map((c) => fetch(`/api/invoices?country=${c}`).then((r) => (r.ok ? r.json() : []))))
-      .then((results) => {
-        const counts = { facture: 0, recu: 0 };
-        results.flat().forEach((inv) => {
-          counts[inv.doc_type] = (counts[inv.doc_type] || 0) + 1;
-        });
-        setInvoicesByType([
-          { id: "factures", value: counts.facture || 0, color: "#8B5CF6" },
-          { id: "recus", value: counts.recu || 0, color: "#F0924B" },
-        ]);
-      })
-      .catch(() => {});
-
-    Promise.all(COUNTRIES.map((c) => fetch(`/api/banking/accounts?country=${c}`).then((r) => (r.ok ? r.json() : []))))
-      .then((results) => setBankAccounts(results.flat()))
-      .catch(() => {});
-
-    fetch("/api/payroll/payslips")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => {
-        const byPeriod = {};
-        (Array.isArray(data) ? data : []).forEach((p) => {
-          byPeriod[p.period_label] = (byPeriod[p.period_label] || 0) + p.gross_total;
-        });
-        setPayrollByPeriod(Object.entries(byPeriod).map(([period, total]) => ({ period, total })));
-      })
-      .catch(() => {});
+    Promise.all(
+      COUNTRIES.map(async (c) => [
+        c,
+        await json(`/api/treasury?country=${c}`, null),
+        await json(`/api/invoices?country=${c}`, []),
+        await json(`/api/banking/accounts?country=${c}`, []),
+      ])
+    ).then((results) => {
+      setTreasury(Object.fromEntries(results.map(([c, tr]) => [c, tr?.history || []])));
+      setInvoices(Object.fromEntries(results.map(([c, , inv]) => [c, inv])));
+      setAccounts(Object.fromEntries(results.map(([c, , , acc]) => [c, acc])));
+    });
   }, []);
 
-  const visaTypes = useMemo(
-    () => Array.from(new Set(clients.map((c) => c.visa_type).filter(Boolean))),
-    [clients]
-  );
-  const countries = useMemo(
-    () => Array.from(new Set(clients.map((c) => c.country).filter(Boolean))),
-    [clients]
-  );
+  const selectedCountries = country === "all" ? COUNTRIES : [country];
 
   const filtered = clients.filter(
-    (c) => (country === "all" || c.country === country) && (visaType === "all" || c.visa_type === visaType)
+    (c) => (country === "all" || clientCountry(c) === country) && (visaType === "all" || c.visa_type === visaType)
   );
 
   const series = useMemo(() => {
@@ -116,23 +90,46 @@ export function StatsPage() {
   const statusCounts = VISA_STATUSES.map((s) => ({
     ...s,
     name: optionLabel(t, "visa", s.id),
-    value: clients.filter((c) => visaStatusOf(c) === s.id).length,
+    value: filtered.filter((c) => visaStatusOf(c) === s.id).length,
   }));
-
-  // Client countries are free text; translate the ones we know.
-  const countryLabel = (c) => {
-    const key = `countries.${c.toLowerCase()}`;
-    const label = t(key);
-    return label === key ? c : label;
-  };
-
-  const invoicesByTypeLabeled = invoicesByType.map((i) => ({ ...i, name: t(`statsPage.${i.id}`) }));
 
   const byCountry = COUNTRIES.map((c) => ({
     name: t(`countries.${c}`),
-    value: clients.filter((cl) => cl.country?.toLowerCase() === c).length,
+    value: filtered.filter((cl) => clientCountry(cl) === c).length,
     color: COUNTRY_COLORS[c],
   })).filter((c) => c.value > 0);
+
+  const treasuryMonthly = useMemo(() => {
+    const merged = {};
+    selectedCountries.forEach((c) =>
+      (treasury[c] || []).forEach((row) => {
+        const bucket = merged[row.month] || { month: row.month, gathering: 0, spending: 0 };
+        bucket.gathering += row.gathering;
+        bucket.spending += row.spending;
+        merged[row.month] = bucket;
+      })
+    );
+    return Object.values(merged).sort((a, b) => a.month.localeCompare(b.month)).slice(-6);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treasury, country]);
+
+  const invoiceList = selectedCountries.flatMap((c) => invoices[c] || []);
+  const invoicesByType = [
+    { id: "factures", value: invoiceList.filter((i) => i.doc_type === "facture").length, color: "#8B5CF6" },
+    { id: "recus", value: invoiceList.filter((i) => i.doc_type === "recu").length, color: "#F0924B" },
+  ].map((i) => ({ ...i, name: t(`statsPage.${i.id}`) }));
+
+  const bankAccounts = selectedCountries.flatMap((c) => accounts[c] || []);
+
+  const payrollByPeriod = useMemo(() => {
+    const byPeriod = {};
+    payslips.forEach((p) => {
+      byPeriod[p.period_label] = (byPeriod[p.period_label] || 0) + (p.net_total ?? p.gross_total);
+    });
+    return Object.entries(byPeriod).map(([period, total]) => ({ period, total }));
+  }, [payslips]);
+
+  const countryName = country === "all" ? t("common.allCountries") : t(`countries.${country}`);
 
   return (
     <div ref={root} className="page-container-max">
@@ -145,8 +142,8 @@ export function StatsPage() {
             <p style={{ marginBottom: "6px", fontSize: "12px", color: "var(--color-muted)" }}>{t("statsPage.country")}</p>
             <BoxSelect value={country} onChange={(e) => setCountry(e.target.value)}>
               <option value="all">{t("common.allCountries")}</option>
-              {countries.map((c) => (
-                <option key={c} value={c}>{countryLabel(c)}</option>
+              {COUNTRIES.map((c) => (
+                <option key={c} value={c}>{t(`countries.${c}`)}</option>
               ))}
             </BoxSelect>
           </div>
@@ -154,7 +151,7 @@ export function StatsPage() {
             <p style={{ marginBottom: "6px", fontSize: "12px", color: "var(--color-muted)" }}>{t("statsPage.visaType")}</p>
             <BoxSelect value={visaType} onChange={(e) => setVisaType(e.target.value)}>
               <option value="all">{t("common.allTypes")}</option>
-              {visaTypes.map((v) => (
+              {VISA_TYPES.map((v) => (
                 <option key={v} value={v}>{optionLabel(t, "visaType", v)}</option>
               ))}
             </BoxSelect>
@@ -169,7 +166,7 @@ export function StatsPage() {
             {t("statsPage.newClientsPerMonth")}
           </h2>
           <p style={{ marginBottom: "24px", fontSize: "13px", color: "var(--color-muted)" }}>
-            {country === "all" ? t("common.allCountries") : countryLabel(country)} · {visaType === "all" ? t("statsPage.allVisaTypes") : optionLabel(t, "visaType", visaType)}
+            {countryName} · {visaType === "all" ? t("statsPage.allVisaTypes") : optionLabel(t, "visaType", visaType)}
           </p>
           <div style={{ height: "280px" }}>
             {series.length === 0 ? (
@@ -177,11 +174,11 @@ export function StatsPage() {
                 {t("statsPage.noClientData")}
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
                 <LineChart data={series}>
                   <CartesianGrid stroke="var(--color-line)" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <XAxis reversed={isRtl} dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis orientation={isRtl ? "right" : "left"} allowDecimals={false} tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip />
                   <Line type="monotone" dataKey="count" name={t("statsPage.newClients")} stroke="#8B5CF6" strokeWidth={2.4} dot={{ r: 4, fill: "#8B5CF6" }} />
                 </LineChart>
@@ -197,12 +194,12 @@ export function StatsPage() {
             {t("statsPage.visaStatusChart")}
           </h2>
           <div style={{ height: "400px" }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
               <BarChart data={statusCounts} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <XAxis type="number" hide allowDecimals={false} />
-                <YAxis type="category" dataKey="name" width={170} interval={0} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <XAxis reversed={isRtl} type="number" hide allowDecimals={false} />
+                <YAxis orientation={isRtl ? "right" : "left"} type="category" dataKey="name" width={170} interval={0} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip />
-                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={14}>
+                <Bar dataKey="value" radius={isRtl ? [8, 0, 0, 8] : [0, 8, 8, 0]} barSize={14}>
                   {statusCounts.map((s) => (
                     <Cell key={s.name} fill={s.color} />
                   ))}
@@ -220,7 +217,7 @@ export function StatsPage() {
             {byCountry.length === 0 ? (
               <div className="flex-center" style={{ height: "100%", color: "var(--color-muted)", fontSize: "13px" }}>{t("statsPage.noDataYet")}</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
                 <PieChart>
                   <Pie data={byCountry} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75}>
                     {byCountry.map((c) => (
@@ -243,10 +240,10 @@ export function StatsPage() {
             {invoicesByType.every((i) => i.value === 0) ? (
               <div className="flex-center" style={{ height: "100%", color: "var(--color-muted)", fontSize: "13px" }}>{t("statsPage.noInvoicesYet")}</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
                 <PieChart>
-                  <Pie data={invoicesByTypeLabeled} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75}>
-                    {invoicesByTypeLabeled.map((i) => (
+                  <Pie data={invoicesByType} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75}>
+                    {invoicesByType.map((i) => (
                       <Cell key={i.name} fill={i.color} />
                     ))}
                   </Pie>
@@ -268,11 +265,11 @@ export function StatsPage() {
             {treasuryMonthly.length === 0 ? (
               <div className="flex-center" style={{ height: "100%", color: "var(--color-muted)", fontSize: "13px" }}>{t("statsTab.noHistory")}</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
                 <BarChart data={treasuryMonthly}>
                   <CartesianGrid stroke="var(--color-line)" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <XAxis reversed={isRtl} dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis orientation={isRtl ? "right" : "left"} tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip />
                   <Legend />
                   <Bar dataKey="gathering" name={t("dashboard.gathering")} fill="#8B5CF6" radius={[6, 6, 0, 0]} />
@@ -291,12 +288,12 @@ export function StatsPage() {
             {bankAccounts.length === 0 ? (
               <div className="flex-center" style={{ height: "100%", color: "var(--color-muted)", fontSize: "13px" }}>{t("statsPage.noAccountsYet")}</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
                 <BarChart data={bankAccounts} layout="vertical" margin={{ left: 8, right: 8 }}>
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={90} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <XAxis reversed={isRtl} type="number" hide />
+                  <YAxis orientation={isRtl ? "right" : "left"} type="category" dataKey="name" width={90} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip />
-                  <Bar dataKey="balance" name={t("bankingTab.amountCol")} fill="#22c55e" radius={[0, 6, 6, 0]} barSize={14} />
+                  <Bar dataKey="balance" name={t("bankingTab.amountCol")} fill="#22c55e" radius={isRtl ? [6, 0, 0, 6] : [0, 6, 6, 0]} barSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -311,10 +308,10 @@ export function StatsPage() {
             {payrollByPeriod.length === 0 ? (
               <div className="flex-center" style={{ height: "100%", color: "var(--color-muted)", fontSize: "13px" }}>{t("statsPage.noPayslipsYet")}</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
                 <BarChart data={payrollByPeriod}>
-                  <XAxis dataKey="period" tick={{ fill: "#8a8a8f", fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <XAxis reversed={isRtl} dataKey="period" tick={{ fill: "#8a8a8f", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis orientation={isRtl ? "right" : "left"} tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip />
                   <Bar dataKey="total" name={t("payroll.grossTotalCol")} fill="#1F3A5F" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -323,6 +320,8 @@ export function StatsPage() {
           </div>
         </div>
       </div>
+
+      <CustomChartsSection />
     </div>
   );
 }

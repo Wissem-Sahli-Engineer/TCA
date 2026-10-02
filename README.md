@@ -6,7 +6,8 @@ An internal ERP for **Tunisie Conseil et Assistance (TCA)** — client/visa case
 
 ## Features
 
-- **Dashboard & Stats** — treasury net, bank reserves, client/invoice counts, visa-status breakdown, clients-by-country, factures-vs-reçus, payroll cost per period — all computed from live data.
+- **Dashboard & Stats** — treasury net, bank reserves, client/invoice counts, visa-status breakdown, clients-by-country, factures-vs-reçus, payroll cost per period — all computed from live data, filterable by Tunisia / Libya.
+  - **Custom charts** — each user can add their own charts on the Stats page (pick the data, what to group by, count or sum, bar / horizontal bar / line / pie, country, period). They're saved to the account (`stats_charts` table, computed by `backend/stats.py`) so the web and iOS apps show the same ones.
 - **Clients** — add/edit/remove, AI passport extraction (OCR via Ollama vision model), manual client photo upload, arbitrary file attachments, visa status tracking.
 - **Accounting** (per country: Tunisia / Libya)
   - **Invoices** — generate *factures* and *reçus* as real PDFs from your LaTeX templates (`backend/invoice_templates/`), download or remove.
@@ -14,7 +15,7 @@ An internal ERP for **Tunisie Conseil et Assistance (TCA)** — client/visa case
   - **Banking** — accounts, balances, transactions.
 - **Human Resources**
   - **My Requests** — admin's own request log (name, description, status).
-  - **Employee Requests** — vacations / salary advances / loans, submitted by any signed-in user.
+  - **Employee Requests** — vacations / salary advances / loans, submitted by any signed-in user; the submitter (or the admin) can remove a request.
   - **Fiche de paie** (Payroll) — upload the ZKTeco K40 time-clock export (.xls/.xlsx), enter the hourly rate and advances, and generate the Arabic « بطاقة خلاص الأجر » PDF (base, +25% overtime, +50% weekend, +100% holiday, daily detail) — same rules and layout as `paie_app.html`.
 - **AI Chatbot** — a full assistant page (persists across navigation) and a small popup panel with a "Live helper" mode that attaches a snapshot of the current window to your question.
 - **Role-based sidebar** — `Admin` sees everything; any other role sees Dashboard/Stats/Clients + Employee Requests + Chatbot only.

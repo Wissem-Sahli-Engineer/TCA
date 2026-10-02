@@ -80,7 +80,10 @@ struct UsersView: View {
                     }
                     .swipeActions {
                         if !isMe {
-                            Button(tr("users.remove"), role: .destructive) { toRemove = user }
+                            Button { toRemove = user } label: {
+                                Label(tr("users.remove"), systemImage: "trash")
+                            }
+                            .tint(.red)
                         }
                     }
                 }

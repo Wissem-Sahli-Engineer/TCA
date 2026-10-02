@@ -348,3 +348,33 @@ class User(SQLModel, table=True):
     confirmation_token: str | None = Field(default=None, max_length=100, index=True)
     confirmation_expires: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class StatsQuery(SQLModel):
+    """What to plot: one dataset grouped by one field, counted or summed.
+    The allowed combinations are listed in backend/stats.py."""
+
+    source: str = Field(max_length=30)
+    group_by: str = Field(max_length=50)
+    metric: str = Field(default="count", max_length=50)
+    country: str | None = Field(default=None, max_length=20)  # "tunisia" | "libya" | None = all
+    months: int | None = None  # only the last N months; None = all time
+
+
+class StatsChartBase(StatsQuery):
+    title: str = Field(max_length=150)
+    chart_type: str = Field(default="bar", max_length=20)  # bar | hbar | line | pie
+
+
+class StatsChart(StatsChartBase, table=True):
+    """A custom chart a user added to their Stats page (web and iOS)."""
+
+    __tablename__ = "stats_charts"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class StatsChartCreate(StatsChartBase):
+    pass

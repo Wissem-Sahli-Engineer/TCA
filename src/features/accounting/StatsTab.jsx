@@ -11,8 +11,15 @@ import {
 } from "recharts";
 import { useI18n } from "../../store/i18n";
 
+// Recharts anchors axis labels for left-to-right text; under dir="rtl" the
+// labels slide onto the bars. Keep the chart LTR and mirror it with
+// reversed / orientation instead.
+const CHART_STYLE = { direction: "ltr" };
+
 export function StatsTab({ country, currency }) {
   const t = useI18n((s) => s.t);
+  // Charts are mirrored in Arabic; their text stays LTR-anchored (see CHART_STYLE).
+  const isRtl = useI18n((s) => s.isRtl);
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
@@ -42,11 +49,11 @@ export function StatsTab({ country, currency }) {
             {t("statsTab.noHistory")}
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
             <BarChart data={history} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="var(--color-line)" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "var(--color-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--color-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+              <XAxis reversed={isRtl} dataKey="month" tick={{ fill: "var(--color-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis orientation={isRtl ? "right" : "left"} tick={{ fill: "var(--color-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
               <Tooltip
                 formatter={(val) => [`${currency} ${val.toLocaleString()}`]}
                 contentStyle={{ borderRadius: "8px", border: "1px solid var(--color-line)", backgroundColor: "var(--color-white)", color: "var(--color-ink)" }}

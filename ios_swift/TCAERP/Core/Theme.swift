@@ -54,7 +54,20 @@ enum Country: String, CaseIterable, Identifiable {
 
     /// Label for a free-text country from client data.
     static func label(for text: String) -> String {
-        Country(rawValue: text.lowercased())?.label ?? text
+        detect(text)?.label ?? text
+    }
+
+    /// Spellings of the two countries in the free-text passport fields (same
+    /// list as COUNTRY_ALIASES in backend/stats.py).
+    private static let aliases: [Country: Set<String>] = [
+        .tunisia: ["tunisia", "tunisie", "tunisian", "tunisien", "tunisienne", "tun", "tn", "تونس", "تونسي", "تونسية"],
+        .libya: ["libya", "libye", "libyan", "libyen", "libyenne", "lby", "ly", "ليبيا", "ليبي", "ليبية"],
+    ]
+
+    static func detect(_ text: String?) -> Country? {
+        guard let text else { return nil }
+        let value = text.trimmingCharacters(in: .whitespaces).lowercased()
+        return allCases.first { aliases[$0]?.contains(value) == true }
     }
 }
 

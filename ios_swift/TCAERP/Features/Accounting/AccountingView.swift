@@ -47,12 +47,8 @@ struct AccountingView: View {
                         .padding(.vertical, 2)
                     }
 
-                    Picker("", selection: $section) {
-                        ForEach(Section.allCases) { s in
-                            Text(s.label).tag(s)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    IconTabPicker(items: Section.allCases.map { .init(value: $0, label: $0.label, systemImage: $0.icon) },
+                                  selection: $section)
                 }
                 .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 .listRowBackground(Color.clear)
@@ -125,7 +121,10 @@ struct InvoicesSection: View {
                     }
                 }
                 .swipeActions {
-                    Button(tr("invoicesTab.remove"), role: .destructive) { toRemove = invoice }
+                    Button { toRemove = invoice } label: {
+                        Label(tr("invoicesTab.remove"), systemImage: "trash")
+                    }
+                    .tint(.red)
                 }
             }
         } header: {

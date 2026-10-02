@@ -29,6 +29,9 @@ from backend.models import (
     InvoiceCreate,
     Payslip,
     PayslipCreate,
+    StatsChart,
+    StatsChartCreate,
+    StatsQuery,
     TreasuryEntry,
     TreasuryEntryCreate,
     User,
@@ -36,6 +39,7 @@ from backend.models import (
 from backend.photos import UPLOADS_DIR, delete_photo, save_client_file, save_client_photo
 from backend.invoices import generate_invoice_pdf
 from backend.payroll import DEFAULT_COMPANY, compute_payslip, generate_payslip_pdf, legacy_details, parse_pointage
+from backend.stats import CHART_TYPES, normalize_query, run_query
 from backend.auth import (
     create_access_token,
     decode_access_token,
@@ -440,6 +444,8 @@ def delete_user(user_id: int, admin: User = Depends(require_admin), session: Ses
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    for chart in session.exec(select(StatsChart).where(StatsChart.user_id == user_id)).all():
+        session.delete(chart)
     session.delete(user)
     session.commit()
     return {"status": "success"}
@@ -1012,10 +1018,15 @@ def create_employee_request(
 
 
 @app.delete("/employee-requests/{request_id}")
-def delete_employee_request(request_id: int, _: User = Depends(require_admin), session: Session = Depends(get_session)):
+def delete_employee_request(
+    request_id: int, user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
     req = session.get(EmployeeRequest, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    # The admin can remove any request; anyone else only their own.
+    if user.role != "Admin" and req.user_email != user.email:
+        raise HTTPException(status_code=403, detail="You can only remove your own requests")
     session.delete(req)
     session.commit()
     return {"status": "success"}
@@ -1118,7 +1129,50 @@ def delete_payslip(payslip_id: int, session: Session = Depends(get_session)):
     return {"status": "success"}
 
 
+
+# =====================================================================
+# ========================  CUSTOM STATS CHARTS  ========================
+# =====================================================================
+
+@app.post("/stats/query")
+def stats_query(q: StatsQuery, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    """Data for a chart definition — used by saved charts and the builder's preview."""
+    return run_query(session, user, q)
+
+
+@app.get("/stats/charts")
+def list_stats_charts(user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    return session.exec(
+        select(StatsChart).where(StatsChart.user_id == user.id).order_by(StatsChart.id)
+    ).all()
+
+
+@app.post("/stats/charts", status_code=201)
+def create_stats_chart(
+    data: StatsChartCreate, user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
+    data.title = data.title.strip()
+    if not data.title:
+        raise HTTPException(status_code=422, detail="A chart title is required")
+    if data.chart_type not in CHART_TYPES:
+        raise HTTPException(status_code=422, detail=f"chart_type must be one of {CHART_TYPES}")
+    normalize_query(data, user)
+    chart = StatsChart(**data.model_dump(), user_id=user.id)
+    session.add(chart)
+    session.commit()
+    session.refresh(chart)
+    return chart
+
+
+@app.delete("/stats/charts/{chart_id}")
+def delete_stats_chart(chart_id: int, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    chart = session.get(StatsChart, chart_id)
+    if not chart or chart.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    session.delete(chart)
+    session.commit()
+    return {"status": "success"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.backend:app", host="0.0.0.0", port=8001, reload=True)  # run from the project root
-

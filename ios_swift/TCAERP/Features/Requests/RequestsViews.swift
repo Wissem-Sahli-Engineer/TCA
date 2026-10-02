@@ -16,7 +16,7 @@ struct EmployeeRequestsView: View {
         var icon: String {
             switch self {
             case .vacations: return "beach.umbrella"
-            case .salaryAdvances: return "wallet.bifold"
+            case .salaryAdvances: return "banknote"
             case .loans: return "dollarsign.circle"
             }
         }
@@ -32,17 +32,20 @@ struct EmployeeRequestsView: View {
 
     private var rows: [EmployeeRequest] { requests.filter { $0.category == category.rawValue } }
 
+    /// The admin can remove any request; everyone else their own.
+    private func canRemove(_ request: EmployeeRequest) -> Bool {
+        auth.isAdmin || (request.userEmail != nil && request.userEmail == auth.user?.email)
+    }
+
     var body: some View {
         List {
             Section {
-                Picker("", selection: $category) {
-                    ForEach(Category.allCases) { c in
-                        Label(c.label, systemImage: c.icon).tag(c)
-                    }
-                }
-                .pickerStyle(.segmented)
+                IconTabPicker(items: Category.allCases.map { c in
+                    .init(value: c, label: c.label, systemImage: c.icon,
+                          badge: requests.filter { $0.category == c.rawValue && $0.status == "pending" }.count)
+                }, selection: $category)
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
 
             Section(tr("requests.newRequest")) {
@@ -58,10 +61,20 @@ struct EmployeeRequestsView: View {
                     EmptyRow(text: tr("requests.noRequests"), systemImage: category.icon)
                 }
                 ForEach(rows) { request in
-                    RequestRow(title: request.employeeName, detail: request.detail, date: request.submittedDate, status: request.status)
+                    let removable = canRemove(request)
+                    RequestRow(title: request.employeeName, detail: request.detail, date: request.submittedDate, status: request.status,
+                               onRemove: removable ? { toRemove = request } : nil)
                         .swipeActions {
-                            if auth.isAdmin {
-                                Button(tr("requests.remove"), role: .destructive) { toRemove = request }
+                            if removable {
+                                Button { toRemove = request } label: {
+                                    Label(tr("requests.remove"), systemImage: "trash")
+                                }
+                                .tint(.red)
+                            }
+                        }
+                        .contextMenu {
+                            if removable {
+                                Button(tr("requests.remove"), systemImage: "trash", role: .destructive) { toRemove = request }
                             }
                         }
                 }
@@ -136,9 +149,16 @@ struct AgencyRequestsView: View {
                     EmptyRow(text: tr("requests.noRequests"), systemImage: "doc.text")
                 }
                 ForEach(requests) { request in
-                    RequestRow(title: request.name, detail: request.description, date: request.submittedDate, status: request.status)
+                    RequestRow(title: request.name, detail: request.description, date: request.submittedDate, status: request.status,
+                               onRemove: { toRemove = request })
                         .swipeActions {
-                            Button(tr("requests.remove"), role: .destructive) { toRemove = request }
+                            Button { toRemove = request } label: {
+                                Label(tr("requests.remove"), systemImage: "trash")
+                            }
+                            .tint(.red)
+                        }
+                        .contextMenu {
+                            Button(tr("requests.remove"), systemImage: "trash", role: .destructive) { toRemove = request }
                         }
                 }
             }
@@ -190,6 +210,8 @@ struct RequestRow: View {
     let detail: String
     let date: String
     let status: String
+    /// Shows a delete button when set (also reachable by swiping or long-press).
+    var onRemove: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -199,7 +221,20 @@ struct RequestRow: View {
                 Text(date).font(.caption).foregroundStyle(Color.muted)
             }
             Spacer()
-            StatusBadge(status: status)
+            VStack(alignment: .trailing, spacing: 10) {
+                StatusBadge(status: status)
+                if let onRemove {
+                    Button(action: onRemove) {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.danger)
+                            .frame(width: 32, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(tr("requests.remove"))
+                }
+            }
         }
         .padding(.vertical, 2)
     }

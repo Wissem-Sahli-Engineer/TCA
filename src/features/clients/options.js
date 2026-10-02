@@ -50,6 +50,24 @@ export const CLIENT_CATEGORIES = ["normal", "fair", "reservation"];
 
 export const CURRENCIES = ["USD", "EUR", "TND", "LYD"];
 
+// Spellings of the agency's two countries in the free-text passport fields
+// (same list as COUNTRY_ALIASES in backend/stats.py).
+const COUNTRY_ALIASES = {
+  tunisia: ["tunisia", "tunisie", "tunisian", "tunisien", "tunisienne", "tun", "tn", "تونس", "تونسي", "تونسية"],
+  libya: ["libya", "libye", "libyan", "libyen", "libyenne", "lby", "ly", "ليبيا", "ليبي", "ليبية"],
+};
+
+// "tunisia" | "libya" from the client's passport country (else nationality),
+// or null when it's neither.
+export function clientCountry(client) {
+  for (const value of [client.country, client.nationality]) {
+    const v = (value || "").trim().toLowerCase();
+    const match = Object.keys(COUNTRY_ALIASES).find((id) => COUNTRY_ALIASES[id].includes(v));
+    if (match) return match;
+  }
+  return null;
+}
+
 // A client without a status is treated as a new file.
 export const visaStatusOf = (client) => client.visa_status || "new";
 

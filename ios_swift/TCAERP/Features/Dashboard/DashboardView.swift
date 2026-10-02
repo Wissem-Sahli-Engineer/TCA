@@ -157,16 +157,9 @@ struct VisaStatusChart: View {
     let counts: [(status: VisaStatus, count: Int)]
 
     var body: some View {
-        Chart(counts, id: \.status) { item in
-            BarMark(x: .value("Clients", item.count), y: .value("Status", item.status.label))
-                .foregroundStyle(item.status.color)
-                .cornerRadius(6)
-                .annotation(position: .trailing) {
-                    Text("\(item.count)").font(.caption2).foregroundStyle(Color.muted)
-                }
-        }
-        .chartXAxis(.hidden)
-        .frame(height: CGFloat(counts.count) * 26)
+        BarList(items: counts.map { item in
+            BarList.Item(id: item.status.rawValue, label: item.status.label, value: Double(item.count), color: item.status.color)
+        })
     }
 }
 

@@ -86,6 +86,10 @@ struct Client: Codable, Identifiable, Hashable {
 
     var isAlert: Bool { !alertReasons.isEmpty }
 
+    /// Which of the agency's two countries the client belongs to, from the
+    /// passport country (else nationality); nil when neither.
+    var countryGroup: Country? { Country.detect(country) ?? Country.detect(nationality) }
+
     /// The client's own photo, else their passport scan.
     var displayPhoto: String? {
         [userPhoto, passportImage].compactMap { $0 }.first { !$0.isEmpty }
@@ -339,6 +343,8 @@ struct EmployeeRequest: Codable, Identifiable, Hashable {
     let detail: String
     let submittedDate: String
     let status: String
+    /// Who submitted it; they (and the admin) can remove it.
+    let userEmail: String?
 }
 
 struct NewEmployeeRequest: Encodable {
@@ -350,27 +356,118 @@ struct NewEmployeeRequest: Encodable {
 
 // MARK: Payroll
 
-struct PointageRow: Codable, Hashable {
+/// One day of a ZKTeco K40 time-clock export, as returned by
+/// /payroll/parse-pointage and sent back unchanged to compute the payslip.
+struct PointageDay: Codable, Hashable {
+    let date: String
+    let hor: String
+    let deb: String
+    let fin: String
+    let ent: String
+    let sor: String
+    let hsup: String
+    let reel: String
+    let plan: String
+    let absent: Bool
+    let we: Bool
+    let hol: Bool
+}
+
+/// One employee found in the export (a file may hold several).
+struct PointageEmployee: Codable, Hashable, Identifiable {
+    let empNo: String
     let employeeName: String
+    let matricule: String
+    let rows: [PointageDay]
     let hours: Double
+    let days: Int
+
+    var id: String { empNo }
+}
+
+/// Breakdown computed by backend/payroll.py (compute_payslip).
+struct PayslipDetails: Codable, Hashable {
+    let jours: Int?
+    let abs: Int?
+    let supHm: String?
+    let m25: Double?
+    let gross: Double?
+    let net: Double?
 }
 
 struct Payslip: Codable, Identifiable, Hashable {
     let id: Int
     let employeeName: String
+    let matricule: String?
     let periodLabel: String
     let hours: Double
     let hourlyRate: Double
     let currency: String
     let grossTotal: Double
+    let advances: Double?
+    let netTotal: Double?
+    let details: PayslipDetails?
+
+    var netToPay: Double { netTotal ?? grossTotal }
 }
 
 struct NewPayslip: Encodable {
     let employeeName: String
-    let periodLabel: String
-    let hours: Double
+    let matricule: String
+    let rows: [PointageDay]
     let hourlyRate: Double
+    let advances: Double
+    let pause: Double
+    let m25: Double
+    let m50: Double
+    let m100: Double
+    let companyName: String
+    let companyAddress: String
+    let companyContact: String
     let currency: String
+}
+
+// MARK: Custom stats charts
+
+/// A chart the user added to their Stats page (shared with the website).
+struct StatsChart: Codable, Identifiable, Hashable {
+    let id: Int
+    let title: String
+    let chartType: String
+    let source: String
+    let groupBy: String
+    let metric: String
+    let country: String?
+    let months: Int?
+}
+
+/// What to plot — the body of /stats/query and, with a title and chart
+/// type, of POST /stats/charts.
+struct StatsChartDraft: Codable, Hashable {
+    var title = ""
+    var chartType = "bar"
+    var source = "clients"
+    var groupBy = "visa_status"
+    var metric = "count"
+    var country: String? = nil
+    var months: Int? = nil
+
+    init() {}
+
+    init(_ chart: StatsChart) {
+        title = chart.title
+        chartType = chart.chartType
+        source = chart.source
+        groupBy = chart.groupBy
+        metric = chart.metric
+        country = chart.country
+        months = chart.months
+    }
+}
+
+struct StatsRow: Decodable, Hashable {
+    let key: String?
+    let value: Double
 }
 
 // MARK: Chat

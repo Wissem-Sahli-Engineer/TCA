@@ -16,6 +16,11 @@ import { useScrollReveal } from "../../lib/useScrollReveal";
 import { useI18n } from "../../store/i18n";
 import { MISSING_DOCUMENTS, VISA_STATUSES, isAlert, isInProgress, optionLabel, visaStatusOf } from "../clients/options";
 
+// Recharts anchors axis labels for left-to-right text; under dir="rtl" the
+// labels slide onto the bars. Keep the chart LTR and mirror it with
+// reversed / orientation instead.
+const CHART_STYLE = { direction: "ltr" };
+
 const COUNTRIES = ["tunisia", "libya"];
 
 function Tip({ active, payload, label }) {
@@ -46,6 +51,8 @@ export function DashboardPage() {
   const root = useRef(null);
   useScrollReveal(root);
   const t = useI18n((s) => s.t);
+  // Charts are mirrored in Arabic; their text stays LTR-anchored (see CHART_STYLE).
+  const isRtl = useI18n((s) => s.isRtl);
 
   const [clients, setClients] = useState([]);
   const [treasuryMonthly, setTreasuryMonthly] = useState([]);
@@ -140,11 +147,11 @@ export function DashboardPage() {
             <span style={{ fontSize: "12px", color: "var(--color-muted)" }}>{t("dashboard.last6Months")}</span>
           </div>
           <div style={{ height: "280px" }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
               <AreaChart data={treasuryMonthly}>
                 <CartesianGrid stroke="var(--color-line)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis reversed={isRtl} dataKey="month" tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis orientation={isRtl ? "right" : "left"} tick={{ fill: "#8a8a8f", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<Tip />} />
                 <Area type="monotone" dataKey="gathering" name={t("dashboard.gathering")} stroke="#8B5CF6" fill="#ede9fe" strokeWidth={2} />
                 <Area type="monotone" dataKey="spending" name={t("dashboard.spending")} stroke="#F0924B" fill="transparent" strokeWidth={2} />
@@ -158,12 +165,12 @@ export function DashboardPage() {
             {t("dashboard.byVisaStatus")}
           </h2>
           <div style={{ height: "380px" }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" style={CHART_STYLE}>
               <BarChart data={statusCounts} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <XAxis type="number" hide allowDecimals={false} />
-                <YAxis type="category" dataKey="name" width={150} interval={0} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <XAxis reversed={isRtl} type="number" hide allowDecimals={false} />
+                <YAxis orientation={isRtl ? "right" : "left"} type="category" dataKey="name" width={150} interval={0} tick={{ fill: "var(--color-ink)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<Tip />} cursor={{ fill: "var(--color-surface)" }} />
-                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={12}>
+                <Bar dataKey="value" radius={isRtl ? [8, 0, 0, 8] : [0, 8, 8, 0]} barSize={12}>
                   {statusCounts.map((s) => (
                     <Cell key={s.name} fill={s.color} />
                   ))}

@@ -115,7 +115,10 @@ struct ClientDetailView: View {
                         }
                     }
                     .swipeActions {
-                        Button(tr("common.remove"), role: .destructive) { fileToRemove = file }
+                        Button { fileToRemove = file } label: {
+                            Label(tr("common.remove"), systemImage: "trash")
+                        }
+                        .tint(.red)
                     }
                 }
                 ImageSourceMenu(onImage: { image in

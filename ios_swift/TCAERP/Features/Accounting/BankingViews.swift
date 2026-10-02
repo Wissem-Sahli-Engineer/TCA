@@ -29,7 +29,10 @@ struct BankingSection: View {
                 .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
                 .listRowBackground(index == 0 ? Color.cardInk : Color.card)
                 .swipeActions {
-                    Button(tr("bankingTab.remove"), role: .destructive) { toRemove = account }
+                    Button { toRemove = account } label: {
+                        Label(tr("bankingTab.remove"), systemImage: "trash")
+                    }
+                    .tint(.red)
                 }
             }
         } header: {
