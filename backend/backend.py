@@ -44,6 +44,7 @@ from backend.photos import UPLOADS_DIR, delete_photo, save_client_file, save_cli
 from backend.invoices import generate_invoice_pdf
 from backend.payroll import DEFAULT_COMPANY, compute_payslip, generate_payslip_pdf, legacy_details, parse_pointage
 from backend import passport_ocr
+from backend.assistant_context import build_context
 from backend.client_filters import COUNTRIES, TABS, alert_condition, country_condition, like_pattern, search_conditions, tab_condition, visa_status
 from backend.stats import CHART_TYPES, normalize_query, run_query
 from backend.auth import (
@@ -542,7 +543,7 @@ def set_user_role(
 
 
 @app.post("/chat")
-async def chat(payload: dict):
+async def chat(payload: dict, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """
     payload: {
       "messages": [{"role": "user" | "assistant", "content": "..."}, ...],
@@ -562,10 +563,23 @@ async def chat(payload: dict):
         (i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1
     )
 
+    # Live business data, built for this user's role, so questions about the
+    # website (balances, a client's visa status, request status…) get real answers.
+    question = messages[last_user_index].get("content", "") if last_user_index >= 0 else ""
+    context = await run_in_threadpool(lambda: build_context(session, user, question))
+    oai_messages.append({
+        "role": "system",
+        "content": (
+            "You are the assistant of a visa agency's ERP. Answer from the DATA below when the question is about "
+            "the business; quote exact figures and statuses, and say so if the data doesn't contain the answer "
+            "instead of guessing. Keep answers short.\n\nDATA\n" + context
+        ),
+    })
+
     for i, m in enumerate(messages):
         role = m.get("role")
         content = m.get("content", "")
-        if role not in ("user", "assistant", "system"):
+        if role not in ("user", "assistant"):
             continue
 
         if i == last_user_index and image:
@@ -1085,6 +1099,24 @@ def create_employee_request(
     data: EmployeeRequestCreate, user: User = Depends(get_current_user), session: Session = Depends(get_session)
 ):
     req = EmployeeRequest.model_validate(data, update={"user_email": user.email})
+    session.add(req)
+    session.commit()
+    session.refresh(req)
+    return req
+
+
+@app.put("/employee-requests/{request_id}/status")
+def set_employee_request_status(
+    request_id: int, data: dict, admin: User = Depends(require_admin), session: Session = Depends(get_session)
+):
+    """The admin accepts (approved), refuses (rejected) or puts back on hold (pending)."""
+    status = data.get("status")
+    if status not in ("pending", "approved", "rejected"):
+        raise HTTPException(status_code=422, detail="status must be pending, approved or rejected")
+    req = session.get(EmployeeRequest, request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    req.status = status
     session.add(req)
     session.commit()
     session.refresh(req)

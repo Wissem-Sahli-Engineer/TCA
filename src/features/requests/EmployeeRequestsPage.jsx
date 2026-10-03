@@ -73,6 +73,22 @@ export function EmployeeRequestsPage() {
     }
   };
 
+  // Admin decision: accepted, refused, or put back on hold.
+  const decide = async (id, status) => {
+    try {
+      const res = await fetch(`/api/employee-requests/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("fail");
+      toast(t("requests.statusUpdated").replace("{status}", t(`status.${status}`)), "ok");
+    } catch {
+      toast(t("requests.statusFailed"), "err");
+    }
+    load();
+  };
+
   const remove = async (id) => {
     if (!window.confirm(t("requests.removeConfirm"))) return;
     await fetch(`/api/employee-requests/${id}`, { method: "DELETE" }).catch(() => {});
@@ -107,13 +123,14 @@ export function EmployeeRequestsPage() {
               <th>{t("requests.detailCol")}</th>
               <th>{t("requests.submittedCol")}</th>
               <th>{t("requests.statusCol")}</th>
+              {isAdmin ? <th>{t("requests.decisionCol")}</th> : null}
               <th></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-muted)" }}>
+                <td colSpan={isAdmin ? 6 : 5} style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-muted)" }}>
                   {t("requests.noRequests")}
                 </td>
               </tr>
@@ -126,6 +143,27 @@ export function EmployeeRequestsPage() {
                   <td>
                     <span className={`badge ${BADGE_TONE[r.status]}`}>{t(`status.${r.status}`)}</span>
                   </td>
+                  {isAdmin ? (
+                    <td>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        {[
+                          ["approved", t("requests.accept"), "var(--color-success)"],
+                          ["pending", t("requests.hold"), "var(--color-warning)"],
+                          ["rejected", t("requests.refuse"), "var(--color-danger)"],
+                        ].map(([status, label, color]) => (
+                          <button
+                            key={status}
+                            type="button"
+                            disabled={r.status === status}
+                            onClick={() => decide(r.id, status)}
+                            style={{ color, fontSize: "12px", fontWeight: "600", opacity: r.status === status ? 0.35 : 1 }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                  ) : null}
                   <td>
                     {canRemove(r) ? (
                       <button type="button" onClick={() => remove(r.id)} style={{ color: "var(--color-danger)", fontSize: "12px", fontWeight: "600" }}>

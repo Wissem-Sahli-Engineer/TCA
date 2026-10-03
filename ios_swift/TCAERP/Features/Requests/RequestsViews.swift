@@ -64,6 +64,18 @@ struct EmployeeRequestsView: View {
                     let removable = canRemove(request)
                     RequestRow(title: request.employeeName, detail: request.detail, date: request.submittedDate, status: request.status,
                                onRemove: removable ? { toRemove = request } : nil)
+                        .swipeActions(edge: .leading) {
+                            if auth.isAdmin {
+                                Button { Task { await decide(request, "approved") } } label: {
+                                    Label(tr("requests.accept"), systemImage: "checkmark.circle")
+                                }
+                                .tint(.green)
+                                Button { Task { await decide(request, "rejected") } } label: {
+                                    Label(tr("requests.refuse"), systemImage: "xmark.circle")
+                                }
+                                .tint(.orange)
+                            }
+                        }
                         .swipeActions {
                             if removable {
                                 Button { toRemove = request } label: {
@@ -73,6 +85,11 @@ struct EmployeeRequestsView: View {
                             }
                         }
                         .contextMenu {
+                            if auth.isAdmin {
+                                Button(tr("requests.accept"), systemImage: "checkmark.circle") { Task { await decide(request, "approved") } }
+                                Button(tr("requests.hold"), systemImage: "clock") { Task { await decide(request, "pending") } }
+                                Button(tr("requests.refuse"), systemImage: "xmark.circle") { Task { await decide(request, "rejected") } }
+                            }
                             if removable {
                                 Button(tr("requests.remove"), systemImage: "trash", role: .destructive) { toRemove = request }
                             }
@@ -102,6 +119,17 @@ struct EmployeeRequestsView: View {
 
     private func load() async {
         requests = (try? await API.shared.get("/employee-requests")) ?? []
+    }
+
+    /// Admin decision: accepted, refused, or back on hold.
+    private func decide(_ request: EmployeeRequest, _ status: String) async {
+        do {
+            let _: EmployeeRequest = try await API.shared.put("/employee-requests/\(request.id)/status", body: ["status": status])
+            toast(tr("requests.statusUpdated").replacingOccurrences(of: "{status}", with: tr("status.\(status)")))
+        } catch {
+            toast(tr("requests.statusFailed"), error: true)
+        }
+        await load()
     }
 
     private func submit() async {

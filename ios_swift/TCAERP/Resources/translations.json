@@ -371,7 +371,13 @@
    "submit": "Submit",
    "employeeCol": "Employee",
    "detailCol": "Detail",
-   "describeRequest": "Please describe the request"
+   "describeRequest": "Please describe the request",
+   "accept": "Accept",
+   "refuse": "Refuse",
+   "hold": "Keep pending",
+   "decisionCol": "Decision",
+   "statusUpdated": "Request marked {status}",
+   "statusFailed": "Could not update the request"
   },
   "payroll": {
    "kicker": "Human resources",
@@ -1000,7 +1006,13 @@
    "submit": "إرسال",
    "employeeCol": "الموظف",
    "detailCol": "التفاصيل",
-   "describeRequest": "يرجى وصف الطلب"
+   "describeRequest": "يرجى وصف الطلب",
+   "accept": "قبول",
+   "refuse": "رفض",
+   "hold": "إبقاء قيد الانتظار",
+   "decisionCol": "القرار",
+   "statusUpdated": "تم تحديث الطلب: {status}",
+   "statusFailed": "تعذّر تحديث الطلب"
   },
   "payroll": {
    "kicker": "الموارد البشرية",
